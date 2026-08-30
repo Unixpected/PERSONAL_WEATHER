@@ -144,13 +144,12 @@
     </div>
     <div class="legend-box" id="modelLegend">Models in this forecast: —</div>
 
-    <div class="section-title">⏱️ Next 2–5 hours (weighted nowcast)</div>
-    <div class="section-sub">Blends all models, giving more weight to whichever has tracked closest to the group over the last few hours.</div>
-    <div class="nowcast" id="nowcastRow"></div>
-    <div class="legend-box">
-      <span class="dot" style="background:var(--good)"></span><b>σ &lt; 1.5°</b> = models agree closely &nbsp;·&nbsp;
-      <span class="dot" style="background:var(--warn)"></span><b>σ 1.5–3.5°</b> = some disagreement &nbsp;·&nbsp;
-      <span class="dot" style="background:var(--bad)"></span><b>σ &gt; 3.5°</b> = models diverge, treat as uncertain
+    <div class="section-title">⏱️ Next 5 hours — 15-min resolution</div>
+    <div class="section-sub">15 minutes is the finest free public data available (no source publishes true 5-min forecasts). Each point blends the high-resolution nowcast model with the 6-model hourly consensus, so it's both detailed and averaged.</div>
+    <canvas id="nowcastChart" height="90"></canvas>
+    <div class="legend-row">
+      <span><span class="dot" style="background:#4da3ff"></span>Blended temperature</span>
+      <span><span class="dot" style="background:#f5b942"></span>Rain chance (right axis, %)</span>
     </div>
 
     <div class="section-title">📍 5 km Surrounding Points</div>
@@ -298,48 +297,57 @@ function modelSeries(hourly, field){
   return out;
 }
 
-// Weighted short-term nowcast: blends all models for hours+1..+5,
-// weighting each by how close it's tracked to the group median recently.
-function buildNowcast(hourly, startIdx){
-  const times = hourly.time;
-  const temps = modelSeries(hourly, 'temperature_2m');
-  const rains = modelSeries(hourly, 'precipitation_probability');
+async function fetchFineResolution(lat, lon){
+  // minutely_15 is Open-Meteo's highest-resolution free feed (best-match single blended
+  // model, not raw multi-model). We combine it with the hourly multi-model median below
+  // so the result reflects several models, not just one.
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&minutely_15=temperature_2m,precipitation&timezone=auto&forecast_days=2`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('High-resolution nowcast unavailable for this location');
+  return res.json();
+}
 
-  const lookback = 3;
-  const errors = {}; MODELS.forEach(m => errors[m.key] = 0);
-  let count = 0;
-  for(let i = Math.max(0, startIdx-lookback); i < startIdx; i++){
-    const vals = MODELS.map(m => temps[m.key][i]);
-    const med = median(vals);
-    if(med === null) continue;
-    MODELS.forEach(m=>{
-      const v = temps[m.key][i];
-      if(v !== null && v !== undefined) errors[m.key] += Math.abs(v - med);
+// Blends the 15-min high-resolution feed with the multi-model hourly median so the
+// near-term chart is both fine-grained AND reflects several independent models.
+function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
+  const times = hourlyMultiModel.time;
+  const temps = modelSeries(hourlyMultiModel, 'temperature_2m');
+  const rains = modelSeries(hourlyMultiModel, 'precipitation_probability');
+
+  const fTimes = fineData.minutely_15.time;
+  const fTemps = fineData.minutely_15.temperature_2m;
+  const fPrecip = fineData.minutely_15.precipitation;
+
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 5*60*60*1000);
+
+  const points = [];
+  for(let i=0; i<fTimes.length; i++){
+    const t = new Date(fTimes[i]);
+    if(t < now || t > windowEnd) continue;
+
+    // find the enclosing hour in the multi-model series to pull its median
+    let hourIdx = -1, bestDiff = Infinity;
+    for(let j=startIdx; j<times.length; j++){
+      const diff = Math.abs(new Date(times[j]) - t);
+      if(diff < bestDiff){ bestDiff = diff; hourIdx = j; }
+    }
+    const hourlyMedianTemp = hourIdx >= 0 ? median(MODELS.map(m => temps[m.key][hourIdx])) : fTemps[i];
+    const hourlyMedianRain = hourIdx >= 0 ? median(MODELS.map(m => rains[m.key][hourIdx])) : 0;
+
+    const blendedTemp = fTemps[i] !== null && hourlyMedianTemp !== null
+      ? (fTemps[i]*0.6 + hourlyMedianTemp*0.4)
+      : (fTemps[i] ?? hourlyMedianTemp);
+
+    points.push({
+      time: fTimes[i],
+      temp: blendedTemp,
+      rain: hourlyMedianRain ?? 0,
+      precipMm: fPrecip[i] ?? 0
     });
-    count++;
   }
-  const weights = {}; let wSum = 0;
-  MODELS.forEach(m=>{
-    const avgErr = count ? errors[m.key]/count : 0.5;
-    weights[m.key] = 1/(avgErr + 0.3);
-    wSum += weights[m.key];
-  });
-  MODELS.forEach(m=> weights[m.key] = weights[m.key]/wSum);
-
-  const slots = [];
-  for(let h=1; h<=5; h++){
-    const idx = startIdx + h;
-    if(idx >= times.length) break;
-    const tVals = MODELS.map(m => temps[m.key][idx]);
-    const rVals = MODELS.map(m => rains[m.key][idx]);
-
-    const weightedTemp = MODELS.reduce((s,m)=> s + (temps[m.key][idx]??0)*weights[m.key], 0);
-    const weightedRain = MODELS.reduce((s,m)=> s + (rains[m.key][idx]??0)*weights[m.key], 0);
-    const spread = stddev(tVals);
-
-    slots.push({ time: times[idx], temp: weightedTemp, rain: weightedRain, spread, hoursAhead: h });
-  }
-  return slots;
+  return points;
 }
 
 function fmtHour(iso){
@@ -396,8 +404,9 @@ let youMarker = null, destMarker = null, gridMarkers = [];
 
 function initFrontMap(){
   map = L.map('map', {preferCanvas:true, zoomControl:true}).setView([12.8797, 121.7740], 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom:18, attribution:'© OpenStreetMap'
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom:19, subdomains:'abcd',
+    attribution:'© OpenStreetMap contributors © CARTO'
   }).addTo(map);
   map.on('click', onMapClick);
   // Soft, non-blocking attempt to center the map near the user via IP — no permission needed.
@@ -557,15 +566,36 @@ async function runForLocation(lat, lon, label){
     else if(spread > 3.5){ confBadge.className = 'badge low'; confBadge.textContent = 'Model Divergence'; }
     else { confBadge.className = 'badge mid'; confBadge.textContent = 'Moderate Confidence'; }
 
-    const nowcastSlots = buildNowcast(hourly, startIdx);
-    document.getElementById('nowcastRow').innerHTML = nowcastSlots.map(s => `
-      <div class="slot">
-        <div class="h">+${s.hoursAhead}h · ${fmtHour(s.time)}</div>
-        <div class="t">${s.temp.toFixed(1)}°</div>
-        <div class="p">☔ ${s.rain.toFixed(0)}%</div>
-        <div class="p" style="color:${s.spread>3?'var(--bad)':s.spread>1.5?'var(--warn)':'var(--good)'}">σ ${s.spread.toFixed(1)}°</div>
-      </div>
-    `).join('');
+    const fineData = await fetchFineResolution(lat, lon);
+    const finePoints = buildFineNowcast(fineData, hourly, startIdx);
+
+    if(window.nowcastChartInstance) window.nowcastChartInstance.destroy();
+    window.nowcastChartInstance = new Chart(document.getElementById('nowcastChart'), {
+      type: 'line',
+      data: {
+        labels: finePoints.map(p => fmtHour(p.time)),
+        datasets: [
+          {
+            label:'Temperature', data: finePoints.map(p=>p.temp), borderColor:'#4da3ff',
+            backgroundColor:'rgba(77,163,255,.12)', fill:true, tension:.35, pointRadius:0,
+            borderWidth:2, yAxisID:'y'
+          },
+          {
+            label:'Rain chance %', data: finePoints.map(p=>p.rain), borderColor:'#f5b942',
+            borderDash:[4,4], tension:.35, pointRadius:0, borderWidth:1.5, yAxisID:'y1'
+          }
+        ]
+      },
+      options: {
+        animation:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:'#93a2bd', maxTicksLimit:8}, grid:{color:'#1e2a44'}},
+          y:{ticks:{color:'#93a2bd'}, grid:{color:'#1e2a44'}, title:{display:true, text:'°C', color:'#93a2bd'}},
+          y1:{position:'right', min:0, max:100, ticks:{color:'#f5b942'}, grid:{display:false}, title:{display:true, text:'%', color:'#f5b942'}}
+        }
+      }
+    });
 
     const pts = offsetPoints(lat, lon, 5);
     const gridEl = document.getElementById('gridPoints');
