@@ -138,7 +138,7 @@
   </div>
 
   <div class="section-title">🗺️ Set Your Location</div>
-  <div class="section-sub">Click anywhere on the map to drop a pin — zoom in first for pinpoint accuracy.</div>
+  <div class="section-sub">Click anywhere on the map to drop a pin — zoom in first for pinpoint accuracy. If the map looks broken, tap <button class="secondary" style="padding:3px 9px; font-size:.72rem;" onclick="cycleTileProvider()">Try a different map style</button></div>
   <div id="map"></div>
   <div id="pickedPanel" class="legend-box" style="display:none; margin-top:10px;">
     <div id="pickedName">—</div>
@@ -465,7 +465,8 @@ function fmtHour(iso){
 
 function useMyLocation(){
   if(!navigator.geolocation){
-    statusEl.innerHTML = '<span class="err">Geolocation is not supported by this browser. Please click the map instead.</span>';
+    statusEl.innerHTML = 'Geolocation is not supported by this browser — falling back to network-based location…';
+    fallbackToIpLocation();
     return;
   }
   statusEl.style.display = 'block';
@@ -479,18 +480,26 @@ function useMyLocation(){
     err => {
       console.warn('Browser geolocation failed:', err.message);
       const isFileProtocol = location.protocol === 'file:';
-      if(isFileProtocol){
-        statusEl.innerHTML = `<span class="err">Browser GPS is blocked on local files (browser security rule) — it only works over "http://localhost" or a real website.</span> Please click your spot on the map below instead.`;
-      } else if(err.code === err.TIMEOUT){
-        statusEl.innerHTML = `<span class="err">GPS timed out.</span> This usually means location services are turned off at the device/OS level (e.g. Windows Location Settings, or Android's Location toggle) — the website can't turn that on for you. Please enable it and try again, or just click your spot on the map below.`;
-      } else if(err.code === err.PERMISSION_DENIED){
-        statusEl.innerHTML = `<span class="err">Location permission was denied.</span> Check your browser's site settings for this page and allow Location, or click your spot on the map below.`;
-      } else {
-        statusEl.innerHTML = `<span class="err">${err.message}.</span> Please click your spot on the map below instead.`;
-      }
+      let reason;
+      if(isFileProtocol) reason = 'GPS is blocked on local files (browser rule)';
+      else if(err.code === err.TIMEOUT) reason = 'GPS timed out — likely blocked by your network/security software, or location services are off';
+      else if(err.code === err.PERMISSION_DENIED) reason = 'location permission was denied';
+      else reason = err.message;
+      statusEl.textContent = `${reason}. Trying network-based location instead…`;
+      fallbackToIpLocation();
     },
-    {enableHighAccuracy:true, timeout:15000, maximumAge:0}
+    {enableHighAccuracy:true, timeout:12000, maximumAge:0}
   );
+}
+
+function fallbackToIpLocation(){
+  getIpLocation().then(loc=>{
+    statusEl.textContent = `Using approximate location: ${loc.label} (network-based, not exact GPS). Fetching forecasts…`;
+    if(map) map.setView([loc.lat, loc.lon], 12);
+    runForLocation(loc.lat, loc.lon, loc.label);
+  }).catch(()=>{
+    statusEl.innerHTML = `<span class="err">Could not detect your location automatically — your network may be blocking these lookups.</span> Please click your exact spot on the map below instead, that always works regardless of network restrictions.`;
+  });
 }
 
 async function searchCity(){
@@ -516,12 +525,58 @@ let mapMode = 'location'; // 'location' = picking your own spot, 'destination' =
 let pickedLoc = null;
 let youMarker = null, destMarker = null, gridMarkers = [];
 
+// Some networks/proxies/antivirus tools block specific map-tile domains while allowing
+// others. We try providers in order and automatically switch if one fails to load tiles.
+const TILE_PROVIDERS = [
+  {
+    url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png',
+    options: {maxZoom:18, attribution:'Wikimedia maps | © OpenStreetMap contributors'}
+  },
+  {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    options: {maxZoom:19, subdomains:'abcd', attribution:'© OpenStreetMap contributors © CARTO'}
+  },
+  {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    options: {maxZoom:16, attribution:'Tiles © Esri — Esri, HERE, Garmin, OpenStreetMap contributors'}
+  },
+  {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options: {maxZoom:19, attribution:'© OpenStreetMap contributors'}
+  }
+];
+let currentTileLayer = null;
+let tileProviderIdx = 0;
+let tileLoadedOnce = false;
+
+function tryTileProvider(idx){
+  if(idx >= TILE_PROVIDERS.length) return; // exhausted automatic attempts — user can still force-cycle manually
+  tileProviderIdx = idx;
+  tileLoadedOnce = false;
+  const provider = TILE_PROVIDERS[idx];
+  if(currentTileLayer) map.removeLayer(currentTileLayer);
+  currentTileLayer = L.tileLayer(provider.url, provider.options).addTo(map);
+
+  currentTileLayer.on('tileload', () => { tileLoadedOnce = true; });
+  currentTileLayer.on('tileerror', () => {
+    if(tileLoadedOnce) return; // this provider basically works, ignore one-off errors
+    // give it a brief moment in case other tiles succeed, then bail to the next provider
+    setTimeout(()=>{
+      if(!tileLoadedOnce && tileProviderIdx === idx){
+        console.warn('Map provider blocked or failing, switching:', provider.url);
+        tryTileProvider(idx+1);
+      }
+    }, 1500);
+  });
+}
+
+function cycleTileProvider(){
+  tryTileProvider((tileProviderIdx+1) % TILE_PROVIDERS.length);
+}
+
 function initFrontMap(){
   map = L.map('map', {zoomControl:true}).setView([12.8797, 121.7740], 6);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom:16,
-    attribution:'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, OpenStreetMap contributors'
-  }).addTo(map);
+  tryTileProvider(0);
   map.on('click', onMapClick);
   // Soft, non-blocking attempt to center the map near the user via IP — no permission needed.
   getIpLocation().then(loc => map.setView([loc.lat, loc.lon], 11)).catch(()=>{});
