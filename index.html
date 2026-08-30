@@ -90,6 +90,29 @@
   .trip-detail{display:flex; gap:14px; margin-top:10px; flex-wrap:wrap;}
   .trip-point{flex:1; min-width:150px; background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:10px;}
   @media (max-width:600px){ .two-col{grid-template-columns:1fr;} }
+
+  .minute-list{background:var(--card2); border:1px solid var(--border); border-radius:12px; overflow:hidden;}
+  .minute-row{
+    display:flex; align-items:center; gap:10px; padding:8px 14px;
+    border-bottom:1px solid var(--border); font-size:.85rem;
+  }
+  .minute-row:last-child{border-bottom:none;}
+  .minute-row .m-time{width:78px; color:var(--text); font-weight:600; flex-shrink:0;}
+  .minute-row .m-icon{width:22px; text-align:center; flex-shrink:0;}
+  .minute-row .m-desc{color:var(--muted); flex:1;}
+  .minute-row .m-temp{color:var(--text); font-weight:600; font-size:.8rem;}
+  .minute-chunk{border-bottom:1px solid var(--border);}
+  .minute-chunk:last-child{border-bottom:none;}
+  .chunk-header{
+    display:flex; align-items:center; gap:10px; padding:10px 14px; cursor:pointer;
+    font-size:.85rem; font-weight:700; background:var(--card);
+  }
+  .chunk-header:hover{filter:brightness(1.08);}
+  .chunk-header .m-desc{color:var(--muted); font-weight:400;}
+  .chunk-header .chev{margin-left:auto; color:var(--muted); transition:transform .15s;}
+  .chunk-header.open .chev{transform:rotate(180deg);}
+  .chunk-body{display:none;}
+  .chunk-body.open{display:block;}
 </style>
 </head>
 <body>
@@ -144,13 +167,9 @@
     </div>
     <div class="legend-box" id="modelLegend">Models in this forecast: —</div>
 
-    <div class="section-title">⏱️ Next 5 hours — 15-min resolution</div>
-    <div class="section-sub">15 minutes is the finest free public data available (no source publishes true 5-min forecasts). Each point blends the high-resolution nowcast model with the 6-model hourly consensus, so it's both detailed and averaged.</div>
-    <canvas id="nowcastChart" height="90"></canvas>
-    <div class="legend-row">
-      <span><span class="dot" style="background:#4da3ff"></span>Blended temperature</span>
-      <span><span class="dot" style="background:#f5b942"></span>Rain chance (right axis, %)</span>
-    </div>
+    <div class="section-title">⏱️ Next 5 hours — minute by minute</div>
+    <div class="section-sub">Real data is measured every 15 minutes (the finest free public feed available); the minutes in between are interpolated, same idea as your phone's "MinuteCast." Blended against the 6-model hourly consensus for accuracy.</div>
+    <div id="minuteList" class="minute-list"></div>
 
     <div class="section-title">📍 5 km Surrounding Points</div>
     <div class="section-sub">Quick single-model check ~5km North, South, East and West of you, to spot local variation.</div>
@@ -350,6 +369,95 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
   return points;
 }
 
+function precipLabel(mmPerHour){
+  if(mmPerHour <= 0.05) return {text:'No Precipitation', icon:'☁️'};
+  if(mmPerHour <= 0.5) return {text:'Light Rain', icon:'🌦️'};
+  if(mmPerHour <= 4) return {text:'Moderate Rain', icon:'🌧️'};
+  return {text:'Heavy Rain', icon:'⛈️'};
+}
+
+// Linearly interpolates the real 15-min points down to per-minute values for display.
+// This is presentation smoothing, not new measured data — the list says so up top.
+function buildMinuteSeries(finePoints){
+  const minutes = [];
+  for(let i=0; i<finePoints.length-1; i++){
+    const a = finePoints[i], b = finePoints[i+1];
+    const tA = new Date(a.time), tB = new Date(b.time);
+    const stepMs = 60*1000;
+    for(let t=tA.getTime(); t<tB.getTime(); t+=stepMs){
+      const frac = (t - tA.getTime()) / (tB.getTime() - tA.getTime());
+      const temp = a.temp + (b.temp - a.temp)*frac;
+      const precipMmPer15 = a.precipMm + (b.precipMm - a.precipMm)*frac;
+      const mmPerHour = precipMmPer15 * 4; // 15-min amount -> hourly rate for classification
+      minutes.push({ time: new Date(t), temp, mmPerHour });
+    }
+  }
+  return minutes;
+}
+
+function renderMinuteList(finePoints){
+  const container = document.getElementById('minuteList');
+  if(!finePoints.length){ container.innerHTML = '<div class="minute-row">No high-resolution data available for this location.</div>'; return; }
+
+  const minutes = buildMinuteSeries(finePoints);
+  if(!minutes.length){ container.innerHTML = '<div class="minute-row">Not enough data to build a minute-by-minute view.</div>'; return; }
+
+  // First 30 minutes shown expanded; the rest grouped into 30-minute collapsible chunks.
+  const firstBlock = minutes.slice(0, 30);
+  const rest = minutes.slice(30);
+  const chunks = [];
+  for(let i=0; i<rest.length; i+=30){
+    chunks.push(rest.slice(i, i+30));
+  }
+
+  const rowHtml = m => {
+    const p = precipLabel(m.mmPerHour);
+    return `<div class="minute-row">
+      <div class="m-time">${fmtHour(m.time)}</div>
+      <div class="m-icon">${p.icon}</div>
+      <div class="m-desc">${p.text}</div>
+      <div class="m-temp">${m.temp.toFixed(1)}°</div>
+    </div>`;
+  };
+
+  const chunkSummary = block => {
+    // dominant condition in the block, by simple max-severity
+    const worst = block.reduce((w,m)=> m.mmPerHour > w.mmPerHour ? m : w, block[0]);
+    return precipLabel(worst.mmPerHour);
+  };
+
+  let html = firstBlock.map(rowHtml).join('');
+
+  html += chunks.map((block, idx) => {
+    if(!block.length) return '';
+    const startLabel = fmtHour(block[0].time);
+    const endLabel = fmtHour(block[block.length-1].time);
+    const summary = chunkSummary(block);
+    const chunkId = `chunk-${idx}`;
+    return `
+      <div class="minute-chunk">
+        <div class="chunk-header" onclick="toggleChunk('${chunkId}')" id="${chunkId}-header">
+          <span>${startLabel} – ${endLabel}</span>
+          <span class="m-desc">${summary.icon} ${summary.text}</span>
+          <span class="chev">▾</span>
+        </div>
+        <div class="chunk-body" id="${chunkId}-body">
+          ${block.map(rowHtml).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+function toggleChunk(id){
+  const body = document.getElementById(`${id}-body`);
+  const header = document.getElementById(`${id}-header`);
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open', !isOpen);
+  header.classList.toggle('open', !isOpen);
+}
+
 function fmtHour(iso){
   const d = new Date(iso);
   return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
@@ -371,11 +479,17 @@ function useMyLocation(){
     err => {
       console.warn('Browser geolocation failed:', err.message);
       const isFileProtocol = location.protocol === 'file:';
-      statusEl.innerHTML = isFileProtocol
-        ? `<span class="err">Browser GPS is blocked on local files (this is a browser security rule, not a bug in the app) — it only works over "http://localhost" or a real website.</span> Easiest fix: <b>click your exact spot on the map below</b>, or run the file through a tiny local server (see run-server.bat / run-server.sh included with this download) and open it via http://localhost instead.`
-        : `<span class="err">${err.message}.</span> Please click your spot on the map below instead.`;
+      if(isFileProtocol){
+        statusEl.innerHTML = `<span class="err">Browser GPS is blocked on local files (browser security rule) — it only works over "http://localhost" or a real website.</span> Please click your spot on the map below instead.`;
+      } else if(err.code === err.TIMEOUT){
+        statusEl.innerHTML = `<span class="err">GPS timed out.</span> This usually means location services are turned off at the device/OS level (e.g. Windows Location Settings, or Android's Location toggle) — the website can't turn that on for you. Please enable it and try again, or just click your spot on the map below.`;
+      } else if(err.code === err.PERMISSION_DENIED){
+        statusEl.innerHTML = `<span class="err">Location permission was denied.</span> Check your browser's site settings for this page and allow Location, or click your spot on the map below.`;
+      } else {
+        statusEl.innerHTML = `<span class="err">${err.message}.</span> Please click your spot on the map below instead.`;
+      }
     },
-    {enableHighAccuracy:true, timeout:8000, maximumAge:0}
+    {enableHighAccuracy:true, timeout:15000, maximumAge:0}
   );
 }
 
@@ -403,10 +517,10 @@ let pickedLoc = null;
 let youMarker = null, destMarker = null, gridMarkers = [];
 
 function initFrontMap(){
-  map = L.map('map', {preferCanvas:true, zoomControl:true}).setView([12.8797, 121.7740], 6);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom:19, subdomains:'abcd',
-    attribution:'© OpenStreetMap contributors © CARTO'
+  map = L.map('map', {zoomControl:true}).setView([12.8797, 121.7740], 6);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom:16,
+    attribution:'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, OpenStreetMap contributors'
   }).addTo(map);
   map.on('click', onMapClick);
   // Soft, non-blocking attempt to center the map near the user via IP — no permission needed.
@@ -568,34 +682,7 @@ async function runForLocation(lat, lon, label){
 
     const fineData = await fetchFineResolution(lat, lon);
     const finePoints = buildFineNowcast(fineData, hourly, startIdx);
-
-    if(window.nowcastChartInstance) window.nowcastChartInstance.destroy();
-    window.nowcastChartInstance = new Chart(document.getElementById('nowcastChart'), {
-      type: 'line',
-      data: {
-        labels: finePoints.map(p => fmtHour(p.time)),
-        datasets: [
-          {
-            label:'Temperature', data: finePoints.map(p=>p.temp), borderColor:'#4da3ff',
-            backgroundColor:'rgba(77,163,255,.12)', fill:true, tension:.35, pointRadius:0,
-            borderWidth:2, yAxisID:'y'
-          },
-          {
-            label:'Rain chance %', data: finePoints.map(p=>p.rain), borderColor:'#f5b942',
-            borderDash:[4,4], tension:.35, pointRadius:0, borderWidth:1.5, yAxisID:'y1'
-          }
-        ]
-      },
-      options: {
-        animation:false,
-        plugins:{legend:{display:false}},
-        scales:{
-          x:{ticks:{color:'#93a2bd', maxTicksLimit:8}, grid:{color:'#1e2a44'}},
-          y:{ticks:{color:'#93a2bd'}, grid:{color:'#1e2a44'}, title:{display:true, text:'°C', color:'#93a2bd'}},
-          y1:{position:'right', min:0, max:100, ticks:{color:'#f5b942'}, grid:{display:false}, title:{display:true, text:'%', color:'#f5b942'}}
-        }
-      }
-    });
+    renderMinuteList(finePoints);
 
     const pts = offsetPoints(lat, lon, 5);
     const gridEl = document.getElementById('gridPoints');
