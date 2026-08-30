@@ -43,6 +43,7 @@
   .badge.mid{background:rgba(245,185,66,.15); color:var(--warn); border:1px solid rgba(245,185,66,.4);}
   .grid4{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px;}
   .mini{background:var(--card2); border:1px solid var(--border); border-radius:12px; padding:10px; text-align:center;}
+  .nowcast .mini{min-width:82px; flex-shrink:0;}
   .mini .dir{font-size:.72rem; color:var(--muted); margin-bottom:3px;}
   .mini .t{font-size:1.3rem; font-weight:700;}
   .mini .p{font-size:.72rem; color:var(--accent); margin-top:2px;}
@@ -147,6 +148,17 @@
     </div>
   </div>
 
+  <div class="legend-box" style="margin-top:10px;">
+    <div style="margin-bottom:8px;">Simplest option: if the map won't load, type coordinates directly (get them from Google Maps by long-pressing your spot).</div>
+    <div class="two-col">
+      <input id="manualLat" type="text" placeholder="Latitude, e.g. 14.5378">
+      <input id="manualLon" type="text" placeholder="Longitude, e.g. 120.9986">
+    </div>
+    <div style="height:8px;"></div>
+    <button class="secondary" onclick="useManualCoords()">Use these coordinates</button>
+    <div id="coordsErr" class="err" style="font-size:.8rem; margin-top:8px;"></div>
+  </div>
+
   <div id="app" style="display:none;">
     <div class="row">
       <div class="card hero">
@@ -202,7 +214,11 @@
       <div id="tripResult" class="trip-result"></div>
     </div>
 
-    <div class="section-title">📈 24h Model Comparison</div>
+    <div class="section-title">🕐 Next 24 Hours — at a glance</div>
+    <div class="section-sub">Consensus icon, temperature, and rain chance per hour. The detailed model-by-model chart is further below.</div>
+    <div class="nowcast" id="next24Row" style="margin-bottom:24px;"></div>
+
+    <div class="section-title">📈 24h Model Comparison (detailed)</div>
     <canvas id="chart" height="100"></canvas>
     <div class="legend-row" id="chartLegend"></div>
   </div>
@@ -395,6 +411,26 @@ function buildMinuteSeries(finePoints){
   return minutes;
 }
 
+// Merges consecutive minutes that share the same condition/temperature into a single
+// row so unchanging stretches (e.g. an hour of steady light rain) show as one line
+// instead of dozens of identical rows.
+function mergeMinutesIntoSegments(minutes){
+  const segments = [];
+  let cur = null;
+  minutes.forEach(m => {
+    const p = precipLabel(m.mmPerHour);
+    const roundedTemp = Math.round(m.temp*2)/2; // nearest 0.5° to avoid noisy flicker
+    if(cur && cur.label === p.text && Math.abs(cur.temp - roundedTemp) < 0.6){
+      cur.end = m.time;
+    } else {
+      if(cur) segments.push(cur);
+      cur = {start: m.time, end: m.time, label: p.text, icon: p.icon, temp: roundedTemp};
+    }
+  });
+  if(cur) segments.push(cur);
+  return segments;
+}
+
 function renderMinuteList(finePoints){
   const container = document.getElementById('minuteList');
   if(!finePoints.length){ container.innerHTML = '<div class="minute-row">No high-resolution data available for this location.</div>'; return; }
@@ -402,50 +438,49 @@ function renderMinuteList(finePoints){
   const minutes = buildMinuteSeries(finePoints);
   if(!minutes.length){ container.innerHTML = '<div class="minute-row">Not enough data to build a minute-by-minute view.</div>'; return; }
 
-  // First 30 minutes shown expanded; the rest grouped into 30-minute collapsible chunks.
-  const firstBlock = minutes.slice(0, 30);
-  const rest = minutes.slice(30);
-  const chunks = [];
-  for(let i=0; i<rest.length; i+=30){
-    chunks.push(rest.slice(i, i+30));
-  }
+  const segments = mergeMinutesIntoSegments(minutes);
 
-  const rowHtml = m => {
-    const p = precipLabel(m.mmPerHour);
+  const segRow = s => {
+    const sameMinute = s.start.getTime() === s.end.getTime();
+    const timeLabel = sameMinute ? fmtHour(s.start) : `${fmtHour(s.start)} – ${fmtHour(s.end)}`;
     return `<div class="minute-row">
-      <div class="m-time">${fmtHour(m.time)}</div>
-      <div class="m-icon">${p.icon}</div>
-      <div class="m-desc">${p.text}</div>
-      <div class="m-temp">${m.temp.toFixed(1)}°</div>
+      <div class="m-time">${timeLabel}</div>
+      <div class="m-icon">${s.icon}</div>
+      <div class="m-desc">${s.label}</div>
+      <div class="m-temp">${s.temp.toFixed(1)}°</div>
     </div>`;
   };
 
-  const chunkSummary = block => {
-    // dominant condition in the block, by simple max-severity
-    const worst = block.reduce((w,m)=> m.mmPerHour > w.mmPerHour ? m : w, block[0]);
-    return precipLabel(worst.mmPerHour);
-  };
+  // Split into "right now" (first ~45 min) and "later" — both collapsible so nothing
+  // is forced to stay open if the person wants a shorter view.
+  const cutoff = new Date(Date.now() + 45*60*1000);
+  const soon = segments.filter(s => s.start <= cutoff);
+  const later = segments.filter(s => s.start > cutoff);
 
-  let html = firstBlock.map(rowHtml).join('');
+  let html = `
+    <div class="minute-chunk">
+      <div class="chunk-header open" id="soon-header" onclick="toggleChunk('soon')">
+        <span>Right now (next ~45 min)</span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="chunk-body open" id="soon-body">
+        ${soon.map(segRow).join('')}
+      </div>
+    </div>`;
 
-  html += chunks.map((block, idx) => {
-    if(!block.length) return '';
-    const startLabel = fmtHour(block[0].time);
-    const endLabel = fmtHour(block[block.length-1].time);
-    const summary = chunkSummary(block);
-    const chunkId = `chunk-${idx}`;
-    return `
+  if(later.length){
+    html += `
       <div class="minute-chunk">
-        <div class="chunk-header" onclick="toggleChunk('${chunkId}')" id="${chunkId}-header">
-          <span>${startLabel} – ${endLabel}</span>
-          <span class="m-desc">${summary.icon} ${summary.text}</span>
+        <div class="chunk-header" id="later-header" onclick="toggleChunk('later')">
+          <span>Later (up to 5 hours)</span>
+          <span class="m-desc">${later.length} period${later.length>1?'s':''}</span>
           <span class="chev">▾</span>
         </div>
-        <div class="chunk-body" id="${chunkId}-body">
-          ${block.map(rowHtml).join('')}
+        <div class="chunk-body" id="later-body">
+          ${later.map(segRow).join('')}
         </div>
       </div>`;
-  }).join('');
+  }
 
   container.innerHTML = html;
 }
@@ -461,6 +496,14 @@ function toggleChunk(id){
 function fmtHour(iso){
   const d = new Date(iso);
   return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+
+function weatherIcon(rainPct){
+  if(rainPct === null || rainPct === undefined) return '🌡️';
+  if(rainPct >= 70) return '🌧️';
+  if(rainPct >= 40) return '🌦️';
+  if(rainPct >= 10) return '⛅';
+  return '☀️';
 }
 
 function useMyLocation(){
@@ -500,6 +543,21 @@ function fallbackToIpLocation(){
   }).catch(()=>{
     statusEl.innerHTML = `<span class="err">Could not detect your location automatically — your network may be blocking these lookups.</span> Please click your exact spot on the map below instead, that always works regardless of network restrictions.`;
   });
+}
+
+function useManualCoords(){
+  const errEl = document.getElementById('coordsErr');
+  errEl.textContent = '';
+  const lat = parseFloat(document.getElementById('manualLat').value);
+  const lon = parseFloat(document.getElementById('manualLon').value);
+  if(isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180){
+    errEl.textContent = 'Please enter valid numbers (latitude -90 to 90, longitude -180 to 180).';
+    return;
+  }
+  statusEl.style.display = 'block';
+  statusEl.textContent = `Using (${lat}, ${lon}). Fetching forecasts…`;
+  if(map) map.setView([lat, lon], 13);
+  runForLocation(lat, lon, `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
 }
 
 async function searchCity(){
@@ -763,9 +821,21 @@ async function runForLocation(lat, lon, label){
       tension:.3, pointRadius:0, borderWidth:1.4
     }));
     const consensusData = chartLabels.map((_,i) => median(MODELS.map(m => temps[m.key][startIdx+i])));
+    const rainConsensusData = chartLabels.map((_,i) => median(MODELS.map(m => rains[m.key][startIdx+i])));
     chartDatasets.push({label:'Consensus', data:consensusData, borderColor:'#ffffff', borderWidth:3, tension:.3, pointRadius:0});
 
-    new Chart(document.getElementById('chart'), {
+    // Quick-glance card row — same 24h data as the chart below, easier to scan at a glance.
+    document.getElementById('next24Row').innerHTML = chartLabels.map((lbl, i) => `
+      <div class="mini">
+        <div class="dir">${lbl}</div>
+        <div style="font-size:1.3rem; margin:2px 0;">${weatherIcon(rainConsensusData[i])}</div>
+        <div class="t">${consensusData[i]?.toFixed(0) ?? '--'}°</div>
+        <div class="p">☔ ${rainConsensusData[i]?.toFixed(0) ?? '--'}%</div>
+      </div>
+    `).join('');
+
+    if(window.mainChartInstance) window.mainChartInstance.destroy();
+    window.mainChartInstance = new Chart(document.getElementById('chart'), {
       type: 'line',
       data: { labels: chartLabels, datasets: chartDatasets },
       options: {
