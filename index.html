@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local Weather Consensus</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --card:#121b2e; --card2:#0f1626; --text:#e8edf7; --muted:#93a2bd;
+    --accent:#4da3ff; --good:#2ecc71; --bad:#ff5d5d; --warn:#f5b942; --border:#1e2a44;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh; padding:20px;
+  }
+  .wrap{max-width:1100px; margin:0 auto;}
+  h1{font-size:1.35rem; font-weight:700; margin:0 0 4px; letter-spacing:-.01em;}
+  .sub{color:var(--muted); font-size:.88rem; margin-bottom:18px;}
+  .row{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:18px;}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; flex:1; min-width:230px;
+  }
+  .hero{display:flex; align-items:center; justify-content:space-between; gap:20px;}
+  .temp{font-size:2.8rem; font-weight:700; line-height:1;}
+  .label{color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.06em;}
+  .badge{
+    display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px;
+    font-size:.75rem; font-weight:700;
+  }
+  .badge.high{background:rgba(46,204,113,.15); color:var(--good); border:1px solid rgba(46,204,113,.4);}
+  .badge.low{background:rgba(255,93,93,.15); color:var(--bad); border:1px solid rgba(255,93,93,.4);}
+  .badge.mid{background:rgba(245,185,66,.15); color:var(--warn); border:1px solid rgba(245,185,66,.4);}
+  .grid4{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px;}
+  .mini{background:var(--card2); border:1px solid var(--border); border-radius:12px; padding:10px; text-align:center;}
+  .mini .dir{font-size:.72rem; color:var(--muted); margin-bottom:3px;}
+  .mini .t{font-size:1.3rem; font-weight:700;}
+  .mini .p{font-size:.72rem; color:var(--accent); margin-top:2px;}
+  .section-title{font-size:.95rem; margin:24px 0 10px; color:var(--text); font-weight:700; display:flex; align-items:center; gap:8px;}
+  .section-sub{color:var(--muted); font-size:.78rem; margin:-6px 0 10px;}
+  .nowcast{display:flex; gap:8px; overflow-x:auto; padding-bottom:6px;}
+  .nowcast .slot{
+    min-width:96px; background:var(--card2); border:1px solid var(--border);
+    border-radius:12px; padding:10px; text-align:center; flex-shrink:0;
+  }
+  .nowcast .slot .h{color:var(--muted); font-size:.72rem;}
+  .nowcast .slot .t{font-size:1.15rem; font-weight:700; margin-top:3px;}
+  .nowcast .slot .p{font-size:.7rem; color:var(--accent); margin-top:2px;}
+  canvas{background:var(--card2); border-radius:12px; padding:8px; border:1px solid var(--border);}
+  #status{color:var(--muted); font-size:.85rem; margin-bottom:14px;}
+  .err{color:var(--bad);}
+  button{
+    background:var(--accent); color:#04101f; border:none; padding:9px 15px; border-radius:8px;
+    font-weight:700; cursor:pointer; font-size:.83rem;
+  }
+  button.secondary{background:var(--card2); color:var(--text); border:1px solid var(--border);}
+  button:hover{filter:brightness(1.08);}
+  .legend-row{display:flex; gap:14px; flex-wrap:wrap; font-size:.75rem; color:var(--muted); margin-top:8px;}
+  .dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px;}
+  .legend-box{
+    background:var(--card2); border:1px solid var(--border); border-radius:10px;
+    padding:10px 12px; font-size:.75rem; color:var(--muted); margin-top:8px; line-height:1.6;
+  }
+  .legend-box b{color:var(--text);}
+  input, select{
+    padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--card2); color:var(--text); font-size:.85rem; width:100%;
+  }
+  .field{margin-bottom:10px;}
+  .field label{font-size:.75rem; color:var(--muted); display:block; margin-bottom:4px;}
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  #map{height:280px; border-radius:12px; border:1px solid var(--border); z-index:0;}
+  .trip-result{margin-top:14px;}
+  .trip-verdict{
+    display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px;
+    font-weight:700; font-size:.95rem;
+  }
+  .trip-verdict.yes{background:rgba(255,93,93,.12); border:1px solid rgba(255,93,93,.35); color:var(--bad);}
+  .trip-verdict.no{background:rgba(46,204,113,.12); border:1px solid rgba(46,204,113,.35); color:var(--good);}
+  .trip-detail{display:flex; gap:14px; margin-top:10px; flex-wrap:wrap;}
+  .trip-point{flex:1; min-width:150px; background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:10px;}
+  @media (max-width:600px){ .two-col{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌦️ Local Weather Consensus</h1>
+  <div class="sub">Multi-model forecast, 5&nbsp;km micro-grid, short-term nowcast, and trip planner — runs fully in your browser</div>
+
+  <div id="status">Click your exact spot on the map below — that's the most accurate option.</div>
+  <div class="row" style="margin-bottom:8px;">
+    <button onclick="useMyLocation()">📍 Try Browser GPS</button>
+    <button class="secondary" onclick="document.getElementById('manualBox').style.display='block'">Search a place</button>
+  </div>
+
+  <div id="manualBox" style="display:none; margin-bottom:14px;">
+    <div class="card" style="max-width:460px;">
+      <div class="label" style="margin-bottom:8px;">Search a place</div>
+      <input id="manualCity" type="text" placeholder="e.g. Taft Avenue, Manila or Libertad, Pasay">
+      <div class="section-sub" style="margin:6px 0 0;">Tip: add the city/province for small barangays — or just click the map, which is always exact.</div>
+      <div style="height:8px;"></div>
+      <button onclick="searchCity()">Use this location</button>
+      <div id="manualErr" class="err" style="font-size:.8rem; margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div class="section-title">🗺️ Set Your Location</div>
+  <div class="section-sub">Click anywhere on the map to drop a pin — zoom in first for pinpoint accuracy.</div>
+  <div id="map"></div>
+  <div id="pickedPanel" class="legend-box" style="display:none; margin-top:10px;">
+    <div id="pickedName">—</div>
+    <div style="margin-top:8px;">
+      <button onclick="confirmPickedLocation()">Get weather for this spot</button>
+    </div>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div class="row">
+      <div class="card hero">
+        <div>
+          <div class="label">Consensus Now</div>
+          <div class="temp" id="heroTemp">--°</div>
+          <div class="label" id="heroPlace">—</div>
+        </div>
+        <div style="text-align:right;">
+          <div id="confBadge" class="badge mid">…</div>
+          <div style="margin-top:10px; font-size:.85rem; color:var(--muted);">
+            Rain: <span id="heroRain">--%</span><br>
+            Wind: <span id="heroWind">-- km/h</span>
+          </div>
+          <button class="secondary" style="margin-top:10px; font-size:.72rem; padding:6px 10px;" onclick="reopenLocationPicker()">📍 Change location</button>
+        </div>
+      </div>
+    </div>
+    <div class="legend-box" id="modelLegend">Models in this forecast: —</div>
+
+    <div class="section-title">⏱️ Next 2–5 hours (weighted nowcast)</div>
+    <div class="section-sub">Blends all models, giving more weight to whichever has tracked closest to the group over the last few hours.</div>
+    <div class="nowcast" id="nowcastRow"></div>
+    <div class="legend-box">
+      <span class="dot" style="background:var(--good)"></span><b>σ &lt; 1.5°</b> = models agree closely &nbsp;·&nbsp;
+      <span class="dot" style="background:var(--warn)"></span><b>σ 1.5–3.5°</b> = some disagreement &nbsp;·&nbsp;
+      <span class="dot" style="background:var(--bad)"></span><b>σ &gt; 3.5°</b> = models diverge, treat as uncertain
+    </div>
+
+    <div class="section-title">📍 5 km Surrounding Points</div>
+    <div class="section-sub">Quick single-model check ~5km North, South, East and West of you, to spot local variation.</div>
+    <div class="grid4" id="gridPoints"></div>
+
+    <div class="section-title">🎒 Umbrella / Trip Checker</div>
+    <div class="section-sub">Compare weather between two points. The map above is now in <b>destination-picking mode</b> — click it to set "To" — or type a place below.</div>
+    <div class="card">
+      <div class="two-col">
+        <div class="field">
+          <label>From</label>
+          <input id="tripFrom" type="text" placeholder="Defaults to your current location">
+        </div>
+        <div class="field">
+          <label>To</label>
+          <input id="tripTo" type="text" placeholder="Type a city, or click the map above">
+        </div>
+      </div>
+      <div class="field">
+        <label>When</label>
+        <select id="tripWhen">
+          <option value="0">Now</option>
+          <option value="1">In 1 hour</option>
+          <option value="2">In 2 hours</option>
+          <option value="3">In 3 hours</option>
+          <option value="5">In 5 hours</option>
+        </select>
+      </div>
+      <button onclick="checkTrip()">Check my trip</button>
+      <div id="tripResult" class="trip-result"></div>
+    </div>
+
+    <div class="section-title">📈 24h Model Comparison</div>
+    <canvas id="chart" height="100"></canvas>
+    <div class="legend-row" id="chartLegend"></div>
+  </div>
+
+  <div style="margin-top:22px;">
+    <button class="secondary" onclick="location.reload()">Refresh</button>
+  </div>
+</div>
+
+<script>
+const statusEl = document.getElementById('status');
+let CURRENT = null; // {lat, lon, label}
+let map = null;
+
+// Free, no-key Open-Meteo models. All independently run global/regional forecast models.
+const MODELS = [
+  {key:'ecmwf_ifs025', name:'ECMWF', color:'#4da3ff'},
+  {key:'gfs_seamless', name:'GFS (NOAA)', color:'#f5b942'},
+  {key:'icon_seamless', name:'ICON (DWD)', color:'#2ecc71'},
+  {key:'meteofrance_seamless', name:'Météo-France', color:'#c07bff'},
+  {key:'gem_seamless', name:'GEM (Canada)', color:'#ff9f4d'},
+  {key:'jma_seamless', name:'JMA (Japan)', color:'#4dd0e1'},
+];
+const MODEL_QUERY = MODELS.map(m=>m.key).join(',');
+
+function median(arr){
+  const a = arr.filter(v => v !== null && v !== undefined && !isNaN(v)).sort((x,y)=>x-y);
+  if(!a.length) return null;
+  const mid = Math.floor(a.length/2);
+  return a.length % 2 ? a[mid] : (a[mid-1]+a[mid])/2;
+}
+function mean(arr){
+  const a = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+  if(!a.length) return null;
+  return a.reduce((s,v)=>s+v,0)/a.length;
+}
+function stddev(arr){
+  const a = arr.filter(v => v !== null && v !== undefined && !isNaN(v));
+  if(a.length < 2) return 0;
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/a.length);
+}
+function offsetPoints(lat, lon, km=5){
+  const dLat = km/111;
+  const dLon = km/(111*Math.cos(lat*Math.PI/180));
+  return {
+    N:{lat: lat+dLat, lon: lon, dir:'North'},
+    S:{lat: lat-dLat, lon: lon, dir:'South'},
+    E:{lat: lat, lon: lon+dLon, dir:'East'},
+    W:{lat: lat, lon: lon-dLon, dir:'West'},
+  };
+}
+
+async function fetchMultiModel(lat, lon){
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&hourly=temperature_2m,precipitation_probability,wind_speed_10m` +
+    `&models=${MODEL_QUERY}&timezone=auto&forecast_days=2`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Weather API error ' + res.status);
+  return res.json();
+}
+async function fetchSimple(lat, lon){
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&hourly=temperature_2m,precipitation_probability&timezone=auto&forecast_days=1`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Weather API error ' + res.status);
+  return res.json();
+}
+async function getIpLocation(){
+  const res = await fetch('https://ipapi.co/json/');
+  if(!res.ok) throw new Error('IP location lookup failed');
+  const j = await res.json();
+  if(!j.latitude || !j.longitude) throw new Error('IP location returned no coordinates');
+  return {lat: j.latitude, lon: j.longitude, label: `${j.city || ''} ${j.region || ''}`.trim() || 'Approximate (IP-based)'};
+}
+async function geocodeCity(name){
+  // Nominatim (OpenStreetMap) has far better coverage of small localities/barangays
+  // than the basic Open-Meteo geocoder.
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(name)}&limit=1&addressdetails=1`;
+  const res = await fetch(url, {headers:{'Accept':'application/json'}});
+  const j = await res.json();
+  if(!j || !j.length) throw new Error(`"${name}" not found. Try adding the city/province (e.g. "Libertad, Pasay City"), or just click the map instead — it's always exact.`);
+  const r = j[0];
+  const parts = r.display_name.split(',').map(s=>s.trim());
+  return {lat: parseFloat(r.lat), lon: parseFloat(r.lon), label: parts.slice(0,3).join(', ')};
+}
+async function reverseGeocode(lat, lon){
+  try{
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`;
+    const res = await fetch(url, {headers:{'Accept':'application/json'}});
+    const j = await res.json();
+    return j.address ? (j.address.city || j.address.town || j.address.village || j.address.county || j.display_name) : `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+  }catch(e){
+    return `${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+  }
+}
+
+function currentHourIndex(times){
+  const now = new Date();
+  let best = 0, bestDiff = Infinity;
+  times.forEach((t,i)=>{
+    const diff = Math.abs(new Date(t) - now);
+    if(diff < bestDiff){ bestDiff = diff; best = i; }
+  });
+  return best;
+}
+
+function modelSeries(hourly, field){
+  const out = {};
+  MODELS.forEach(m => { out[m.key] = hourly[`${field}_${m.key}`]; });
+  return out;
+}
+
+// Weighted short-term nowcast: blends all models for hours+1..+5,
+// weighting each by how close it's tracked to the group median recently.
+function buildNowcast(hourly, startIdx){
+  const times = hourly.time;
+  const temps = modelSeries(hourly, 'temperature_2m');
+  const rains = modelSeries(hourly, 'precipitation_probability');
+
+  const lookback = 3;
+  const errors = {}; MODELS.forEach(m => errors[m.key] = 0);
+  let count = 0;
+  for(let i = Math.max(0, startIdx-lookback); i < startIdx; i++){
+    const vals = MODELS.map(m => temps[m.key][i]);
+    const med = median(vals);
+    if(med === null) continue;
+    MODELS.forEach(m=>{
+      const v = temps[m.key][i];
+      if(v !== null && v !== undefined) errors[m.key] += Math.abs(v - med);
+    });
+    count++;
+  }
+  const weights = {}; let wSum = 0;
+  MODELS.forEach(m=>{
+    const avgErr = count ? errors[m.key]/count : 0.5;
+    weights[m.key] = 1/(avgErr + 0.3);
+    wSum += weights[m.key];
+  });
+  MODELS.forEach(m=> weights[m.key] = weights[m.key]/wSum);
+
+  const slots = [];
+  for(let h=1; h<=5; h++){
+    const idx = startIdx + h;
+    if(idx >= times.length) break;
+    const tVals = MODELS.map(m => temps[m.key][idx]);
+    const rVals = MODELS.map(m => rains[m.key][idx]);
+
+    const weightedTemp = MODELS.reduce((s,m)=> s + (temps[m.key][idx]??0)*weights[m.key], 0);
+    const weightedRain = MODELS.reduce((s,m)=> s + (rains[m.key][idx]??0)*weights[m.key], 0);
+    const spread = stddev(tVals);
+
+    slots.push({ time: times[idx], temp: weightedTemp, rain: weightedRain, spread, hoursAhead: h });
+  }
+  return slots;
+}
+
+function fmtHour(iso){
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+
+function useMyLocation(){
+  if(!navigator.geolocation){
+    statusEl.innerHTML = '<span class="err">Geolocation is not supported by this browser. Please click the map instead.</span>';
+    return;
+  }
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Requesting precise browser GPS…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const {latitude:lat, longitude:lon} = pos.coords;
+      statusEl.textContent = 'Location found. Fetching forecasts…';
+      runForLocation(lat, lon, 'Your location');
+    },
+    err => {
+      console.warn('Browser geolocation failed:', err.message);
+      const isFileProtocol = location.protocol === 'file:';
+      statusEl.innerHTML = isFileProtocol
+        ? `<span class="err">Browser GPS is blocked on local files (this is a browser security rule, not a bug in the app) — it only works over "http://localhost" or a real website.</span> Easiest fix: <b>click your exact spot on the map below</b>, or run the file through a tiny local server (see run-server.bat / run-server.sh included with this download) and open it via http://localhost instead.`
+        : `<span class="err">${err.message}.</span> Please click your spot on the map below instead.`;
+    },
+    {enableHighAccuracy:true, timeout:8000, maximumAge:0}
+  );
+}
+
+async function searchCity(){
+  const val = document.getElementById('manualCity').value.trim();
+  const errEl = document.getElementById('manualErr');
+  errEl.textContent = '';
+  if(!val){ errEl.textContent = 'Please enter a place name.'; return; }
+  try{
+    const loc = await geocodeCity(val);
+    document.getElementById('manualBox').style.display = 'none';
+    statusEl.style.display = 'block';
+    statusEl.textContent = `Using ${loc.label}. Fetching forecasts…`;
+    if(map) map.setView([loc.lat, loc.lon], 13);
+    runForLocation(loc.lat, loc.lon, loc.label);
+  }catch(e){
+    errEl.textContent = e.message;
+  }
+}
+
+// The map loads immediately on page load (see bottom of script), before any
+// weather data, so there's no lag once the user is ready to click a spot.
+let mapMode = 'location'; // 'location' = picking your own spot, 'destination' = picking a trip target
+let pickedLoc = null;
+let youMarker = null, destMarker = null, gridMarkers = [];
+
+function initFrontMap(){
+  map = L.map('map', {preferCanvas:true, zoomControl:true}).setView([12.8797, 121.7740], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:18, attribution:'© OpenStreetMap'
+  }).addTo(map);
+  map.on('click', onMapClick);
+  // Soft, non-blocking attempt to center the map near the user via IP — no permission needed.
+  getIpLocation().then(loc => map.setView([loc.lat, loc.lon], 11)).catch(()=>{});
+}
+
+async function onMapClick(e){
+  const {lat, lng:lon} = e.latlng;
+  if(mapMode === 'location'){
+    if(youMarker) map.removeLayer(youMarker);
+    youMarker = L.circleMarker([lat, lon], {radius:8, color:'#4da3ff', fillColor:'#4da3ff', fillOpacity:.9}).addTo(map);
+    const panel = document.getElementById('pickedPanel');
+    panel.style.display = 'block';
+    document.getElementById('pickedName').textContent = 'Loading address…';
+    pickedLoc = {lat, lon, label:null};
+    const name = await reverseGeocode(lat, lon);
+    pickedLoc.label = name;
+    document.getElementById('pickedName').innerHTML = `📍 <b>${name}</b> (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+  } else {
+    if(destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker([lat, lon]).addTo(map).bindPopup('Destination').openPopup();
+    const toInput = document.getElementById('tripTo');
+    toInput.value = 'Loading…';
+    const name = await reverseGeocode(lat, lon);
+    toInput.value = name;
+    toInput.dataset.lat = lat;
+    toInput.dataset.lon = lon;
+  }
+}
+
+function confirmPickedLocation(){
+  if(!pickedLoc) return;
+  document.getElementById('pickedPanel').style.display = 'none';
+  statusEl.style.display = 'block';
+  statusEl.textContent = `Using ${pickedLoc.label}. Fetching forecasts…`;
+  runForLocation(pickedLoc.lat, pickedLoc.lon, pickedLoc.label);
+}
+
+function reopenLocationPicker(){
+  mapMode = 'location';
+  document.getElementById('pickedPanel').style.display = 'block';
+  document.getElementById('pickedName').textContent = 'Click your spot on the map above.';
+  document.getElementById('map').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+// Places "you are here" + the 5km grid on the already-loaded map, then
+// switches the map into destination-picking mode for the trip checker.
+function attachWeatherMarkers(lat, lon){
+  if(youMarker) map.removeLayer(youMarker);
+  youMarker = L.circleMarker([lat, lon], {radius:8, color:'#4da3ff', fillColor:'#4da3ff', fillOpacity:.9})
+    .addTo(map).bindPopup('You are here');
+
+  gridMarkers.forEach(m => map.removeLayer(m));
+  gridMarkers = [];
+  const pts = offsetPoints(lat, lon, 5);
+  Object.values(pts).forEach(p=>{
+    const mk = L.circleMarker([p.lat, p.lon], {radius:5, color:'#2ecc71', fillColor:'#2ecc71', fillOpacity:.8})
+      .addTo(map).bindPopup(`${p.dir} (5km)`);
+    gridMarkers.push(mk);
+  });
+
+  map.setView([lat, lon], 13);
+  mapMode = 'destination';
+}
+
+async function checkTrip(){
+  const resultEl = document.getElementById('tripResult');
+  resultEl.innerHTML = 'Checking…';
+  try{
+    const fromVal = document.getElementById('tripFrom').value.trim();
+    const toInput = document.getElementById('tripTo');
+    const toVal = toInput.value.trim();
+    if(!toVal){ resultEl.innerHTML = '<span class="err">Please enter a destination or click the map.</span>'; return; }
+
+    let fromLoc = CURRENT;
+    if(fromVal){ fromLoc = await geocodeCity(fromVal); }
+
+    let toLoc;
+    if(toInput.dataset.lat && toInput.dataset.lon){
+      toLoc = {lat: parseFloat(toInput.dataset.lat), lon: parseFloat(toInput.dataset.lon), label: toVal};
+    } else {
+      toLoc = await geocodeCity(toVal);
+    }
+
+    const whenHours = parseInt(document.getElementById('tripWhen').value, 10);
+
+    const [fromData, toData] = await Promise.all([
+      fetchSimple(fromLoc.lat, fromLoc.lon),
+      fetchSimple(toLoc.lat, toLoc.lon)
+    ]);
+
+    const fIdx = currentHourIndex(fromData.hourly.time) + whenHours;
+    const tIdx = currentHourIndex(toData.hourly.time) + whenHours;
+
+    const fRain = fromData.hourly.precipitation_probability[fIdx] ?? 0;
+    const fTemp = fromData.hourly.temperature_2m[fIdx];
+    const tRain = toData.hourly.precipitation_probability[tIdx] ?? 0;
+    const tTemp = toData.hourly.temperature_2m[tIdx];
+
+    const maxRain = Math.max(fRain, tRain);
+    const needUmbrella = maxRain >= 40;
+
+    resultEl.innerHTML = `
+      <div class="trip-verdict ${needUmbrella ? 'yes' : 'no'}">
+        ${needUmbrella ? '☔ Bring an umbrella' : '🌤️ No umbrella needed'}
+        <span style="font-weight:400; font-size:.8rem; color:var(--muted); margin-left:auto;">
+          highest rain chance: ${maxRain}%
+        </span>
+      </div>
+      <div class="trip-detail">
+        <div class="trip-point">
+          <div class="label">From — ${fromLoc.label || 'Your location'}</div>
+          <div style="font-size:1.2rem; font-weight:700; margin-top:4px;">${fTemp?.toFixed(1) ?? '--'}°</div>
+          <div style="font-size:.78rem; color:var(--accent);">☔ ${fRain}%</div>
+        </div>
+        <div class="trip-point">
+          <div class="label">To — ${toLoc.label || toVal}</div>
+          <div style="font-size:1.2rem; font-weight:700; margin-top:4px;">${tTemp?.toFixed(1) ?? '--'}°</div>
+          <div style="font-size:.78rem; color:var(--accent);">☔ ${tRain}%</div>
+        </div>
+      </div>
+    `;
+  }catch(e){
+    resultEl.innerHTML = `<span class="err">${e.message}</span>`;
+  }
+}
+
+async function runForLocation(lat, lon, label){
+  CURRENT = {lat, lon, label};
+  try{
+    const data = await fetchMultiModel(lat, lon);
+    const hourly = data.hourly;
+    const startIdx = currentHourIndex(hourly.time);
+
+    const temps = modelSeries(hourly, 'temperature_2m');
+    const rains = modelSeries(hourly, 'precipitation_probability');
+    const winds = modelSeries(hourly, 'wind_speed_10m');
+
+    const curTemps = MODELS.map(m => temps[m.key][startIdx]);
+    const curRains = MODELS.map(m => rains[m.key][startIdx]);
+    const curWinds = MODELS.map(m => winds[m.key][startIdx]);
+
+    const consensusTemp = median(curTemps);
+    const consensusRain = median(curRains);
+    const consensusWind = median(curWinds);
+    const spread = stddev(curTemps);
+
+    document.getElementById('heroTemp').textContent = `${consensusTemp?.toFixed(1) ?? '--'}°C`;
+    document.getElementById('heroRain').textContent = `${consensusRain?.toFixed(0) ?? '--'}%`;
+    document.getElementById('heroWind').textContent = `${consensusWind?.toFixed(1) ?? '--'} km/h`;
+    document.getElementById('heroPlace').textContent = `${label} (${lat.toFixed(3)}, ${lon.toFixed(3)}) · updated ${new Date().toLocaleTimeString()}`;
+    document.getElementById('modelLegend').innerHTML =
+      `Models in this forecast: <b>${MODELS.map(m=>m.name).join(', ')}</b> — consensus is the median across all of them.`;
+
+    const confBadge = document.getElementById('confBadge');
+    if(spread < 1.5){ confBadge.className = 'badge high'; confBadge.textContent = 'High Confidence'; }
+    else if(spread > 3.5){ confBadge.className = 'badge low'; confBadge.textContent = 'Model Divergence'; }
+    else { confBadge.className = 'badge mid'; confBadge.textContent = 'Moderate Confidence'; }
+
+    const nowcastSlots = buildNowcast(hourly, startIdx);
+    document.getElementById('nowcastRow').innerHTML = nowcastSlots.map(s => `
+      <div class="slot">
+        <div class="h">+${s.hoursAhead}h · ${fmtHour(s.time)}</div>
+        <div class="t">${s.temp.toFixed(1)}°</div>
+        <div class="p">☔ ${s.rain.toFixed(0)}%</div>
+        <div class="p" style="color:${s.spread>3?'var(--bad)':s.spread>1.5?'var(--warn)':'var(--good)'}">σ ${s.spread.toFixed(1)}°</div>
+      </div>
+    `).join('');
+
+    const pts = offsetPoints(lat, lon, 5);
+    const gridEl = document.getElementById('gridPoints');
+    gridEl.innerHTML = '<div class="mini">Loading…</div>';
+    const dirs = Object.keys(pts);
+    const results = await Promise.all(dirs.map(d => fetchSimple(pts[d].lat, pts[d].lon)));
+    gridEl.innerHTML = dirs.map((d,i) => {
+      const r = results[i];
+      const idx = currentHourIndex(r.hourly.time);
+      const t = r.hourly.temperature_2m[idx];
+      const p = r.hourly.precipitation_probability[idx];
+      return `<div class="mini"><div class="dir">${pts[d].dir}</div><div class="t">${t?.toFixed(1) ?? '--'}°</div><div class="p">☔ ${p ?? '--'}%</div></div>`;
+    }).join('');
+
+    attachWeatherMarkers(lat, lon);
+    document.getElementById('tripFrom').placeholder = `Defaults to ${label}`;
+
+    const chartLabels = hourly.time.slice(startIdx, startIdx+24).map(fmtHour);
+    const chartDatasets = MODELS.map(m => ({
+      label: m.name,
+      data: temps[m.key].slice(startIdx, startIdx+24),
+      borderColor: m.color,
+      tension:.3, pointRadius:0, borderWidth:1.4
+    }));
+    const consensusData = chartLabels.map((_,i) => median(MODELS.map(m => temps[m.key][startIdx+i])));
+    chartDatasets.push({label:'Consensus', data:consensusData, borderColor:'#ffffff', borderWidth:3, tension:.3, pointRadius:0});
+
+    new Chart(document.getElementById('chart'), {
+      type: 'line',
+      data: { labels: chartLabels, datasets: chartDatasets },
+      options: {
+        animation:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:'#93a2bd', maxTicksLimit:10}, grid:{color:'#1e2a44'}},
+          y:{ticks:{color:'#93a2bd'}, grid:{color:'#1e2a44'}}
+        }
+      }
+    });
+    document.getElementById('chartLegend').innerHTML = chartDatasets.map(d =>
+      `<span><span class="dot" style="background:${d.borderColor}"></span>${d.label}</span>`
+    ).join('');
+
+    statusEl.style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+  }catch(err){
+    console.error(err);
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = `<span class="err">Error: ${err.message}</span>`;
+  }
+}
+
+// Load the map right away so it's ready with no lag by the time the user wants to click.
+initFrontMap();
+</script>
+</body>
+</html>
