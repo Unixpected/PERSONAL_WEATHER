@@ -181,6 +181,9 @@
 
     <div class="section-title">⏱️ Next 5 hours — minute by minute</div>
     <div class="section-sub">Real data is measured every 15 minutes (the finest free public feed available); the minutes in between are interpolated, same idea as your phone's "MinuteCast." Blended against the 6-model hourly consensus for accuracy.</div>
+    <div style="margin-bottom:10px;">
+      <button class="secondary" id="minuteViewToggle" style="font-size:.75rem; padding:6px 12px;" onclick="toggleMinuteView()">Show full per-minute list</button>
+    </div>
     <div id="minuteList" class="minute-list"></div>
 
     <div class="section-title">📍 5 km Surrounding Points</div>
@@ -431,14 +434,23 @@ function mergeMinutesIntoSegments(minutes){
   return segments;
 }
 
+let lastFinePoints = [];
+let minuteViewMode = 'merged'; // 'merged' | 'full'
+
 function renderMinuteList(finePoints){
+  lastFinePoints = finePoints;
   const container = document.getElementById('minuteList');
   if(!finePoints.length){ container.innerHTML = '<div class="minute-row">No high-resolution data available for this location.</div>'; return; }
 
   const minutes = buildMinuteSeries(finePoints);
   if(!minutes.length){ container.innerHTML = '<div class="minute-row">Not enough data to build a minute-by-minute view.</div>'; return; }
 
-  const segments = mergeMinutesIntoSegments(minutes);
+  const rows = minuteViewMode === 'full'
+    ? minutes.map(m => {
+        const p = precipLabel(m.mmPerHour);
+        return {start: m.time, end: m.time, label: p.text, icon: p.icon, temp: m.temp};
+      })
+    : mergeMinutesIntoSegments(minutes);
 
   const segRow = s => {
     const sameMinute = s.start.getTime() === s.end.getTime();
@@ -454,8 +466,8 @@ function renderMinuteList(finePoints){
   // Split into "right now" (first ~45 min) and "later" — both collapsible so nothing
   // is forced to stay open if the person wants a shorter view.
   const cutoff = new Date(Date.now() + 45*60*1000);
-  const soon = segments.filter(s => s.start <= cutoff);
-  const later = segments.filter(s => s.start > cutoff);
+  const soon = rows.filter(s => s.start <= cutoff);
+  const later = rows.filter(s => s.start > cutoff);
 
   let html = `
     <div class="minute-chunk">
@@ -473,7 +485,7 @@ function renderMinuteList(finePoints){
       <div class="minute-chunk">
         <div class="chunk-header" id="later-header" onclick="toggleChunk('later')">
           <span>Later (up to 5 hours)</span>
-          <span class="m-desc">${later.length} period${later.length>1?'s':''}</span>
+          <span class="m-desc">${later.length} ${minuteViewMode === 'full' ? 'minutes' : 'period'+(later.length>1?'s':'')}</span>
           <span class="chev">▾</span>
         </div>
         <div class="chunk-body" id="later-body">
@@ -483,6 +495,13 @@ function renderMinuteList(finePoints){
   }
 
   container.innerHTML = html;
+}
+
+function toggleMinuteView(){
+  minuteViewMode = minuteViewMode === 'merged' ? 'full' : 'merged';
+  document.getElementById('minuteViewToggle').textContent =
+    minuteViewMode === 'full' ? 'Show simplified view' : 'Show full per-minute list';
+  renderMinuteList(lastFinePoints);
 }
 
 function toggleChunk(id){
@@ -585,46 +604,47 @@ let youMarker = null, destMarker = null, gridMarkers = [];
 
 // Some networks/proxies/antivirus tools block specific map-tile domains while allowing
 // others. We try providers in order and automatically switch if one fails to load tiles.
+// All watermark-free, no API key required. Ordered by general reliability.
 const TILE_PROVIDERS = [
+  {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options: {maxZoom:19, attribution:'© OpenStreetMap contributors'}
+  },
   {
     url: 'https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png',
     options: {maxZoom:18, attribution:'Wikimedia maps | © OpenStreetMap contributors'}
   },
   {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    options: {maxZoom:19, subdomains:'abcd', attribution:'© OpenStreetMap contributors © CARTO'}
-  },
-  {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     options: {maxZoom:16, attribution:'Tiles © Esri — Esri, HERE, Garmin, OpenStreetMap contributors'}
-  },
-  {
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    options: {maxZoom:19, attribution:'© OpenStreetMap contributors'}
   }
 ];
 let currentTileLayer = null;
 let tileProviderIdx = 0;
 let tileLoadedOnce = false;
+let tileErrorCount = 0;
 
 function tryTileProvider(idx){
   if(idx >= TILE_PROVIDERS.length) return; // exhausted automatic attempts — user can still force-cycle manually
   tileProviderIdx = idx;
   tileLoadedOnce = false;
+  tileErrorCount = 0;
   const provider = TILE_PROVIDERS[idx];
   if(currentTileLayer) map.removeLayer(currentTileLayer);
   currentTileLayer = L.tileLayer(provider.url, provider.options).addTo(map);
 
   currentTileLayer.on('tileload', () => { tileLoadedOnce = true; });
   currentTileLayer.on('tileerror', () => {
-    if(tileLoadedOnce) return; // this provider basically works, ignore one-off errors
-    // give it a brief moment in case other tiles succeed, then bail to the next provider
+    if(tileLoadedOnce) return; // at least one tile got through, this provider basically works
+    tileErrorCount++;
+    // require several failures (not just one slow tile) before giving up on this provider
+    if(tileErrorCount < 4) return;
     setTimeout(()=>{
       if(!tileLoadedOnce && tileProviderIdx === idx){
         console.warn('Map provider blocked or failing, switching:', provider.url);
         tryTileProvider(idx+1);
       }
-    }, 1500);
+    }, 3000);
   });
 }
 
