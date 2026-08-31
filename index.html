@@ -226,7 +226,7 @@
     <div class="legend-box" id="modelLegend">Models in this forecast: —</div>
 
     <div class="section-title">⏱️ Next 5 hours — every 15 minutes</div>
-    <div class="section-sub">Each block is a real measured data point (15 minutes is the finest free public feed available — no interpolated guessing). Tap a block to see exactly how many of the 6 models actually agree it'll rain.</div>
+    <div class="section-sub">Each block is a real measured data point (15 minutes is the finest free public feed available — no interpolated guessing). Tap a block to see exactly how many of the 6 models actually agree it'll rain. Note: these are weather-model forecasts, not live satellite imagery — for the very next few minutes, what you see outside your window is always the most accurate source.</div>
     <div id="minuteList" class="minute-list"></div>
 
     <div class="section-title">📍 5 km Surrounding Points</div>
@@ -462,7 +462,7 @@ async function fetchFineResolution(lat, lon){
   // model, not raw multi-model). We combine it with the hourly multi-model median below
   // so the result reflects several models, not just one.
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&minutely_15=temperature_2m,precipitation&timezone=auto&forecast_days=2`;
+    `&minutely_15=temperature_2m,precipitation,cloud_cover&timezone=auto&forecast_days=2`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('High-resolution nowcast unavailable for this location');
   return res.json();
@@ -479,6 +479,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
   const fTimes = fineData.minutely_15.time;
   const fTemps = fineData.minutely_15.temperature_2m;
   const fPrecip = fineData.minutely_15.precipitation;
+  const fClouds = fineData.minutely_15.cloud_cover;
 
   const now = new Date();
   const windowEnd = new Date(now.getTime() + 5*60*60*1000);
@@ -502,10 +503,18 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
       ? (fTemps[i]*0.6 + hourlyMedianTemp*0.4)
       : (fTemps[i] ?? hourlyMedianTemp);
 
+    // Same idea as temperature: the 15-min feed updates more often and reflects
+    // near-term conditions better than a single hourly model consensus that can sit
+    // unchanged for hours. Lean on it more heavily for "right now" accuracy.
+    const fCloudVal = fClouds ? fClouds[i] : null;
+    const blendedCloud = fCloudVal !== null && fCloudVal !== undefined && hourlyMedianCloud !== null
+      ? (fCloudVal*0.7 + hourlyMedianCloud*0.3)
+      : (fCloudVal ?? hourlyMedianCloud);
+
     points.push({
       time: fTimes[i],
       temp: blendedTemp,
-      cloud: hourlyMedianCloud,
+      cloud: blendedCloud,
       agreement,
       precipMm: fPrecip[i] ?? 0
     });
