@@ -209,6 +209,7 @@
         <div>
           <div class="label">Consensus Now</div>
           <div class="temp" id="heroTemp">--°</div>
+          <div id="heroCondition" style="font-size:1.05rem; font-weight:700; margin:2px 0 4px;">—</div>
           <div class="label" id="heroPlace">—</div>
         </div>
         <div style="text-align:right;">
@@ -395,7 +396,7 @@ function offsetPoints(lat, lon, km=5){
 
 async function fetchMultiModel(lat, lon){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=temperature_2m,precipitation,wind_speed_10m` +
+    `&hourly=temperature_2m,precipitation,wind_speed_10m,cloud_cover` +
     `&models=${MODEL_QUERY}&timezone=auto&forecast_days=2`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('Weather API error ' + res.status);
@@ -406,7 +407,7 @@ async function fetchSimple(lat, lon){
   // precipitation_probability is a genuinely valid ensemble-derived statistic —
   // unlike when it's requested per named deterministic model (see fetchMultiModel).
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=temperature_2m,precipitation_probability&timezone=auto&forecast_days=1`;
+    `&hourly=temperature_2m,precipitation_probability,cloud_cover&timezone=auto&forecast_days=1`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('Weather API error ' + res.status);
   return res.json();
@@ -473,6 +474,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
   const times = hourlyMultiModel.time;
   const temps = modelSeries(hourlyMultiModel, 'temperature_2m');
   const precip = modelSeries(hourlyMultiModel, 'precipitation');
+  const clouds = modelSeries(hourlyMultiModel, 'cloud_cover');
 
   const fTimes = fineData.minutely_15.time;
   const fTemps = fineData.minutely_15.temperature_2m;
@@ -493,6 +495,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
       if(diff < bestDiff){ bestDiff = diff; hourIdx = j; }
     }
     const hourlyMedianTemp = hourIdx >= 0 ? median(MODELS.map(m => temps[m.key][hourIdx])) : fTemps[i];
+    const hourlyMedianCloud = hourIdx >= 0 ? median(MODELS.map(m => clouds[m.key][hourIdx])) : null;
     const agreement = computeAgreement(precip, hourIdx);
 
     const blendedTemp = fTemps[i] !== null && hourlyMedianTemp !== null
@@ -502,6 +505,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
     points.push({
       time: fTimes[i],
       temp: blendedTemp,
+      cloud: hourlyMedianCloud,
       agreement,
       precipMm: fPrecip[i] ?? 0
     });
@@ -509,11 +513,41 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
   return points;
 }
 
-function precipLabel(mmPerHour){
-  if(mmPerHour <= 0.05) return {text:'No Precipitation', icon:'☁️'};
-  if(mmPerHour <= 0.5) return {text:'Light Rain', icon:'🌦️'};
-  if(mmPerHour <= 4) return {text:'Moderate Rain', icon:'🌧️'};
-  return {text:'Heavy Rain', icon:'⛈️'};
+function isDaytime(date){
+  const h = date.getHours();
+  return h >= 6 && h < 18;
+}
+
+// Full sky-condition classifier: rain intensity (from real forecast amounts) layered
+// with confidence wording ("Chance of..."), falling back to cloud-cover-based sky
+// conditions (Sunny/Partly Cloudy/Overcast, day- or night-aware) when there's no
+// meaningful rain signal. This replaces the old rain-only labeling.
+function conditionLabel(mmPerHour, cloudPct, agreementPct, isDay){
+  let rainName = null;
+  if(mmPerHour > 4) rainName = 'Heavy Rain';
+  else if(mmPerHour > 0.5) rainName = 'Moderate Rain';
+  else if(mmPerHour > 0.05) rainName = 'Light Rain';
+
+  if(rainName){
+    const icon = rainName === 'Heavy Rain' ? '⛈️' : rainName === 'Moderate Rain' ? '🌧️' : '🌦️';
+    if(agreementPct === null || agreementPct >= 70) return {text:rainName, icon};
+    if(agreementPct >= 35) return {text:`Chance of ${rainName}`, icon:'🌦️'};
+    return {text:`Slight Chance of ${rainName}`, icon:'🌤️'};
+  }
+
+  // No rain from the primary signal, but if a real chunk of models still disagree
+  // and show rain, say so rather than calling it flatly clear.
+  if(agreementPct !== null && agreementPct >= 25){
+    return {text:'Chance of Rain', icon:'🌦️'};
+  }
+
+  if(cloudPct === null || cloudPct === undefined){
+    return isDay ? {text:'Clear', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
+  }
+  if(cloudPct < 20) return isDay ? {text:'Sunny', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
+  if(cloudPct < 50) return isDay ? {text:'Partly Cloudy', icon:'🌤️'} : {text:'Partly Cloudy Night', icon:'☁️'};
+  if(cloudPct < 80) return {text:'Mostly Cloudy', icon:'⛅'};
+  return {text:'Overcast', icon:'☁️'};
 }
 
 function confidenceLine(agreement){
@@ -535,20 +569,13 @@ function renderMinuteList(finePoints){
 
   container.innerHTML = finePoints.map((p, idx) => {
     const mmPerHour = p.precipMm * 4;
-    const label = precipLabel(mmPerHour);
+    const startTime = new Date(p.time);
+    const label = conditionLabel(mmPerHour, p.cloud, p.agreement?.pct ?? null, isDaytime(startTime));
     const ag = p.agreement || {pct:null, count:0, total:0, names:[]};
 
-    // If the single blended model says rain but most of the 6 models disagree,
-    // say so plainly instead of stating "Light Rain" as if it were settled.
-    let displayText = label.text;
-    if(label.text !== 'No Precipitation' && ag.pct !== null && ag.pct < 30){
-      displayText = `Possible ${label.text} (unlikely)`;
-    }
-
-    const startTime = new Date(p.time);
     const endTime = new Date(startTime.getTime() + 15*60*1000);
     const timeLabel = `${fmtHour(startTime)} – ${fmtHour(endTime)}`;
-    const confPct = ag.pct !== null ? `${ag.pct}%` : '—';
+    const confPct = ag.pct !== null ? `${ag.pct}% chance` : '—';
     const blockId = `mb${idx}`;
 
     return `
@@ -556,14 +583,14 @@ function renderMinuteList(finePoints){
         <div class="chunk-header ${idx===0?'open':''}" id="${blockId}-header" onclick="toggleChunk('${blockId}')">
           <span class="m-time" style="width:auto;">${timeLabel}</span>
           <span class="m-icon">${label.icon}</span>
-          <span class="m-desc">${displayText} · ${confPct} model agreement</span>
+          <span class="m-desc">${label.text}${ag.pct !== null && ag.count > 0 ? ' · '+confPct+' of rain' : ''}</span>
           <span class="m-temp">${p.temp.toFixed(1)}°</span>
           <span class="chev">▾</span>
         </div>
         <div class="chunk-body ${idx===0?'open':''}" id="${blockId}-body">
           <div class="minute-row" style="display:block;">
             ${confidenceLine(ag)}<br>
-            <span style="color:var(--muted); font-size:.78rem;">Blended forecast rain: ${p.precipMm.toFixed(2)} mm this window (~${mmPerHour.toFixed(2)} mm/hr rate).</span>
+            <span style="color:var(--muted); font-size:.78rem;">Cloud cover: ${p.cloud !== null && p.cloud !== undefined ? Math.round(p.cloud)+'%' : '—'} · Blended forecast rain: ${p.precipMm.toFixed(2)} mm this window (~${mmPerHour.toFixed(2)} mm/hr rate).</span>
           </div>
         </div>
       </div>`;
@@ -583,12 +610,18 @@ function fmtHour(iso){
   return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 
-function weatherIcon(rainPct){
-  if(rainPct === null || rainPct === undefined) return '🌡️';
-  if(rainPct >= 70) return '🌧️';
-  if(rainPct >= 40) return '🌦️';
-  if(rainPct >= 10) return '⛅';
-  return '☀️';
+// For endpoints using a single blended model (grid points, trip checker) where we only
+// have a rain probability, not per-model agreement — same sky-condition logic, simpler input.
+function simpleCondition(rainProb, cloudPct, isDay){
+  if(rainProb !== null && rainProb !== undefined){
+    if(rainProb >= 60) return {text:'Rain Likely', icon:'🌧️'};
+    if(rainProb >= 30) return {text:'Chance of Rain', icon:'🌦️'};
+  }
+  if(cloudPct === null || cloudPct === undefined) return isDay ? {text:'Clear', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
+  if(cloudPct < 20) return isDay ? {text:'Sunny', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
+  if(cloudPct < 50) return isDay ? {text:'Partly Cloudy', icon:'🌤️'} : {text:'Partly Cloudy Night', icon:'☁️'};
+  if(cloudPct < 80) return {text:'Mostly Cloudy', icon:'⛅'};
+  return {text:'Overcast', icon:'☁️'};
 }
 
 function useMyLocation(){
@@ -917,8 +950,13 @@ async function checkTrip(){
 
     const fRain = fromData.hourly.precipitation_probability[fIdx] ?? 0;
     const fTemp = fromData.hourly.temperature_2m[fIdx];
+    const fCloud = fromData.hourly.cloud_cover ? fromData.hourly.cloud_cover[fIdx] : null;
     const tRain = toData.hourly.precipitation_probability[tIdx] ?? 0;
     const tTemp = toData.hourly.temperature_2m[tIdx];
+    const tCloud = toData.hourly.cloud_cover ? toData.hourly.cloud_cover[tIdx] : null;
+
+    const fCond = simpleCondition(fRain, fCloud, isDaytime(new Date(fromData.hourly.time[fIdx])));
+    const tCond = simpleCondition(tRain, tCloud, isDaytime(new Date(toData.hourly.time[tIdx])));
 
     const maxRain = Math.max(fRain, tRain);
     const needUmbrella = maxRain >= 40;
@@ -933,13 +971,13 @@ async function checkTrip(){
       <div class="trip-detail">
         <div class="trip-point">
           <div class="label">From — ${fromLoc.label || 'Your location'}</div>
-          <div style="font-size:1.2rem; font-weight:700; margin-top:4px;">${fTemp?.toFixed(1) ?? '--'}°</div>
-          <div style="font-size:.78rem; color:var(--accent);">☔ ${fRain}%</div>
+          <div style="font-size:1.1rem; margin-top:4px;">${fCond.icon} ${fCond.text}</div>
+          <div style="font-size:1.2rem; font-weight:700;">${fTemp?.toFixed(1) ?? '--'}°</div>
         </div>
         <div class="trip-point">
           <div class="label">To — ${toLoc.label || toVal}</div>
-          <div style="font-size:1.2rem; font-weight:700; margin-top:4px;">${tTemp?.toFixed(1) ?? '--'}°</div>
-          <div style="font-size:.78rem; color:var(--accent);">☔ ${tRain}%</div>
+          <div style="font-size:1.1rem; margin-top:4px;">${tCond.icon} ${tCond.text}</div>
+          <div style="font-size:1.2rem; font-weight:700;">${tTemp?.toFixed(1) ?? '--'}°</div>
         </div>
       </div>
     `;
@@ -958,22 +996,29 @@ async function runForLocation(lat, lon, label){
     const temps = modelSeries(hourly, 'temperature_2m');
     const precip = modelSeries(hourly, 'precipitation');
     const winds = modelSeries(hourly, 'wind_speed_10m');
+    const clouds = modelSeries(hourly, 'cloud_cover');
 
     const curTemps = MODELS.map(m => temps[m.key][startIdx]);
     const curPrecip = MODELS.map(m => precip[m.key][startIdx]);
     const curWinds = MODELS.map(m => winds[m.key][startIdx]);
+    const curClouds = MODELS.map(m => clouds[m.key][startIdx]);
 
     const consensusTemp = median(curTemps);
     const consensusRain = precipAgreementPct(curPrecip);
     const consensusWind = median(curWinds);
+    const consensusCloud = median(curClouds);
+    const consensusPrecipAmt = median(curPrecip);
     const spread = stddev(curTemps);
 
+    const nowCondition = conditionLabel(consensusPrecipAmt ?? 0, consensusCloud, consensusRain, isDaytime(new Date(hourly.time[startIdx])));
+
     document.getElementById('heroTemp').textContent = `${consensusTemp?.toFixed(1) ?? '--'}°C`;
+    document.getElementById('heroCondition').textContent = `${nowCondition.icon} ${nowCondition.text}`;
     document.getElementById('heroRain').textContent = `${consensusRain?.toFixed(0) ?? '--'}%`;
     document.getElementById('heroWind').textContent = `${consensusWind?.toFixed(1) ?? '--'} km/h`;
     document.getElementById('heroPlace').textContent = `${label} (${lat.toFixed(3)}, ${lon.toFixed(3)}) · updated ${new Date().toLocaleTimeString()}`;
     document.getElementById('modelLegend').innerHTML =
-      `Models in this forecast: <b>${MODELS.map(m=>m.name).join(', ')}</b> — temperature/wind consensus is the median across all of them. Rain chance = % of these models forecasting measurable rain (not a borrowed probability field, since that's not reliably defined per individual model).`;
+      `Models in this forecast: <b>${MODELS.map(m=>m.name).join(', ')}</b> — temperature/wind/cloud consensus is the median across all of them. Rain chance = % of these models forecasting measurable rain (not a borrowed probability field, since that's not reliably defined per individual model).`;
 
     const confBadge = document.getElementById('confBadge');
     if(spread < 1.5){ confBadge.className = 'badge high'; confBadge.textContent = 'High Confidence'; }
@@ -994,7 +1039,9 @@ async function runForLocation(lat, lon, label){
       const idx = currentHourIndex(r.hourly.time);
       const t = r.hourly.temperature_2m[idx];
       const p = r.hourly.precipitation_probability[idx];
-      return `<div class="mini"><div class="dir">${pts[d].dir}</div><div class="t">${t?.toFixed(1) ?? '--'}°</div><div class="p">☔ ${p ?? '--'}%</div></div>`;
+      const c = r.hourly.cloud_cover ? r.hourly.cloud_cover[idx] : null;
+      const cond = simpleCondition(p, c, isDaytime(new Date(r.hourly.time[idx])));
+      return `<div class="mini"><div class="dir">${pts[d].dir}</div><div style="font-size:1.1rem; margin:2px 0;">${cond.icon}</div><div class="t">${t?.toFixed(1) ?? '--'}°</div><div class="p" style="font-size:.66rem;">${cond.text}</div></div>`;
     }).join('');
 
     attachWeatherMarkers(lat, lon);
@@ -1009,17 +1056,22 @@ async function runForLocation(lat, lon, label){
     }));
     const consensusData = chartLabels.map((_,i) => median(MODELS.map(m => temps[m.key][startIdx+i])));
     const rainConsensusData = chartLabels.map((_,i) => precipAgreementPct(MODELS.map(m => precip[m.key][startIdx+i])));
+    const cloudConsensusData = chartLabels.map((_,i) => median(MODELS.map(m => clouds[m.key][startIdx+i])));
+    const precipAmtData = chartLabels.map((_,i) => median(MODELS.map(m => precip[m.key][startIdx+i])));
     chartDatasets.push({label:'Consensus', data:consensusData, borderColor:'#ffffff', borderWidth:3, tension:.3, pointRadius:0});
 
     // Quick-glance card row — same 24h data as the chart below, easier to scan at a glance.
-    document.getElementById('next24Row').innerHTML = chartLabels.map((lbl, i) => `
+    document.getElementById('next24Row').innerHTML = chartLabels.map((lbl, i) => {
+      const hourDate = new Date(hourly.time[startIdx+i]);
+      const cond = conditionLabel(precipAmtData[i] ?? 0, cloudConsensusData[i], rainConsensusData[i], isDaytime(hourDate));
+      return `
       <div class="mini">
         <div class="dir">${lbl}</div>
-        <div style="font-size:1.3rem; margin:2px 0;">${weatherIcon(rainConsensusData[i])}</div>
+        <div style="font-size:1.3rem; margin:2px 0;">${cond.icon}</div>
         <div class="t">${consensusData[i]?.toFixed(0) ?? '--'}°</div>
-        <div class="p">☔ ${rainConsensusData[i]?.toFixed(0) ?? '--'}%</div>
-      </div>
-    `).join('');
+        <div class="p" style="font-size:.66rem; line-height:1.2;">${cond.text}</div>
+      </div>`;
+    }).join('');
 
     if(window.mainChartInstance) window.mainChartInstance.destroy();
     window.mainChartInstance = new Chart(document.getElementById('chart'), {
