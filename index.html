@@ -136,13 +136,26 @@
     padding:2px 6px; font-size:.85rem; border-radius:50%; line-height:1;
   }
   .chip-del:hover{color:var(--bad); background:rgba(255,93,93,.12);}
+
+  .tab-row{display:flex; gap:8px; margin-bottom:18px;}
+  .tab-btn{
+    background:var(--card2); border:1px solid var(--border); color:var(--muted);
+    padding:9px 16px; border-radius:999px; font-weight:700; font-size:.85rem; cursor:pointer;
+  }
+  .tab-btn.tab-active{background:var(--accent); color:#04101f; border-color:var(--accent);}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>🌦️ Local Weather Consensus</h1>
-  <div class="sub">Multi-model forecast, 5&nbsp;km micro-grid, short-term nowcast, and trip planner — runs fully in your browser</div>
+  <div class="sub">Multi-model forecast, 5&nbsp;km micro-grid, short-term nowcast, trip planner, and typhoon tracker — runs fully in your browser</div>
 
+  <div class="tab-row">
+    <button class="tab-btn tab-active" id="tabForecastBtn" onclick="switchTab('forecast')">🌦️ Forecast</button>
+    <button class="tab-btn" id="tabTyphoonBtn" onclick="switchTab('typhoon')">🌀 Typhoon Tracker</button>
+  </div>
+
+  <div id="forecastTab">
   <div id="status">Click your exact spot on the map below — that's the most accurate option.</div>
   <div class="row" style="margin-bottom:8px;">
     <button onclick="useMyLocation()">📍 Try Browser GPS</button>
@@ -258,7 +271,55 @@
   <div style="margin-top:22px;">
     <button class="secondary" onclick="location.reload()">Refresh</button>
   </div>
-</div>
+  </div><!-- /forecastTab -->
+
+  <div id="typhoonTab" style="display:none;">
+    <div class="section-title">🌀 Typhoon / Wind Speed Tracker</div>
+    <div class="section-sub">Live wind-speed map with color zones (calm→storm), auto-showing any active tropical cyclone's track when one exists. Powered by Windy's free public map.</div>
+
+    <div class="row" style="margin-bottom:10px;">
+      <button class="secondary" onclick="centerTyphoonOnMyLocation()">📍 Center on my saved location</button>
+      <button class="secondary" onclick="loadActiveTyphoons()">🔄 Refresh active systems</button>
+    </div>
+
+    <div id="typhoonMapWrap" style="border-radius:14px; overflow:hidden; border:1px solid var(--border); background:var(--card2);">
+      <iframe id="typhoonFrame" title="Typhoon and wind speed map" width="100%" height="480" frameborder="0"
+        style="display:block;" loading="lazy"></iframe>
+    </div>
+
+    <div class="legend-box" style="margin-top:10px;">
+      <b>Wind speed color scale (roughly):</b> blue/green = calm–light, yellow = moderate breeze,
+      orange = strong wind, red/purple = storm-force. Any active cyclone shows its own icon and track cone directly on the map — click it for details.
+    </div>
+
+    <div class="section-title" style="margin-top:20px;">📌 Set / Save Map View</div>
+    <div class="section-sub">The map above remembers this view every time you open this tab (saved on this device only). Windy's own pan/zoom inside the map can't be read back automatically, so set it here.</div>
+    <div class="card" style="max-width:460px;">
+      <div class="two-col">
+        <div class="field">
+          <label>Latitude</label>
+          <input id="typhoonLat" type="text" placeholder="14.5378">
+        </div>
+        <div class="field">
+          <label>Longitude</label>
+          <input id="typhoonLon" type="text" placeholder="120.9986">
+        </div>
+      </div>
+      <div class="field">
+        <label>Zoom (3 = wide Pacific view, 8 = close-in)</label>
+        <input id="typhoonZoom" type="text" placeholder="6">
+      </div>
+      <button onclick="saveTyphoonView()">💾 Save this view</button>
+    </div>
+
+    <div class="section-title" style="margin-top:20px;">🌐 Active Tropical Cyclones (best effort)</div>
+    <div class="section-sub">Pulled from GDACS's public global disaster feed when reachable. For official Philippine signal levels (Yellow/Orange/Red per area), always check PAGASA directly — that's a government-specific system we can't reproduce from a free API.</div>
+    <div id="typhoonList" class="legend-box">Loading…</div>
+    <div style="margin-top:10px;">
+      <a href="https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin" target="_blank" rel="noopener" style="color:var(--accent); font-size:.85rem;">Open PAGASA's official Severe Weather Bulletin →</a>
+    </div>
+  </div><!-- /typhoonTab -->
+</div><!-- /wrap -->
 
 <script>
 const statusEl = document.getElementById('status');
@@ -987,6 +1048,99 @@ async function runForLocation(lat, lon, label){
 }
 
 // Load the map right away so it's ready with no lag by the time the user wants to click.
+// --- Typhoon Tracker tab ---
+let typhoonInitialized = false;
+
+function switchTab(tab){
+  document.getElementById('forecastTab').style.display = tab === 'forecast' ? 'block' : 'none';
+  document.getElementById('typhoonTab').style.display = tab === 'typhoon' ? 'block' : 'none';
+  document.getElementById('tabForecastBtn').classList.toggle('tab-active', tab === 'forecast');
+  document.getElementById('tabTyphoonBtn').classList.toggle('tab-active', tab === 'typhoon');
+  if(tab === 'typhoon' && !typhoonInitialized){
+    typhoonInitialized = true;
+    initTyphoonTab();
+  }
+}
+
+function getTyphoonView(){
+  try{ return JSON.parse(localStorage.getItem('typhoonView')); }
+  catch(e){ return null; }
+}
+function setTyphoonView(v){
+  try{ localStorage.setItem('typhoonView', JSON.stringify(v)); }
+  catch(e){ console.warn('Could not save typhoon view:', e.message); }
+}
+
+function loadTyphoonMap(lat, lon, zoom){
+  const iframe = document.getElementById('typhoonFrame');
+  iframe.src = `https://embed.windy.com/embed2.html?lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}` +
+    `&width=650&height=480&zoom=${zoom}&level=surface&overlay=wind&product=ecmwf&menu=&message=true` +
+    `&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1`;
+}
+
+function initTyphoonTab(){
+  const saved = getTyphoonView();
+  const fallback = CURRENT ? {lat:CURRENT.lat, lon:CURRENT.lon, zoom:7} : {lat:12.8797, lon:130.0, zoom:5};
+  const view = saved || fallback;
+  document.getElementById('typhoonLat').value = view.lat;
+  document.getElementById('typhoonLon').value = view.lon;
+  document.getElementById('typhoonZoom').value = view.zoom;
+  loadTyphoonMap(view.lat, view.lon, view.zoom);
+  loadActiveTyphoons();
+}
+
+function saveTyphoonView(){
+  const lat = parseFloat(document.getElementById('typhoonLat').value);
+  const lon = parseFloat(document.getElementById('typhoonLon').value);
+  const zoom = parseInt(document.getElementById('typhoonZoom').value, 10) || 6;
+  if(isNaN(lat) || isNaN(lon)) return;
+  setTyphoonView({lat, lon, zoom});
+  loadTyphoonMap(lat, lon, zoom);
+}
+
+function centerTyphoonOnMyLocation(){
+  if(!CURRENT){
+    alert('Load a forecast location on the Forecast tab first.');
+    return;
+  }
+  document.getElementById('typhoonLat').value = CURRENT.lat;
+  document.getElementById('typhoonLon').value = CURRENT.lon;
+  document.getElementById('typhoonZoom').value = 7;
+  saveTyphoonView();
+}
+
+// Best-effort: GDACS publishes a free global disaster feed including active tropical
+// cyclones. If it's unreachable (network/CORS on a given host) this fails gracefully —
+// the Windy map above still shows any active storm visually either way.
+async function loadActiveTyphoons(){
+  const el = document.getElementById('typhoonList');
+  el.innerHTML = 'Checking for active tropical cyclones…';
+  try{
+    const url = 'https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventtypes=TC';
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('feed unavailable');
+    const j = await res.json();
+    const feats = j.features || [];
+    if(!feats.length){
+      el.innerHTML = 'No active tropical cyclone alerts from GDACS right now.';
+      return;
+    }
+    el.innerHTML = feats.slice(0, 6).map(f => {
+      const p = f.properties || {};
+      const level = (p.alertlevel || 'Green');
+      const dotColor = level.toLowerCase() === 'red' ? 'var(--bad)' : level.toLowerCase() === 'orange' ? 'var(--warn)' : 'var(--good)';
+      const name = p.name || p.eventname || 'Unnamed system';
+      return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border);">
+        <span class="dot" style="background:${dotColor};"></span>
+        <span style="font-weight:600;">🌀 ${name}</span>
+        <span style="color:var(--muted); margin-left:auto; font-size:.78rem;">${level} alert</span>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML = 'Live typhoon list unavailable right now (network restrictions vary by device) — the map above still shows any active storm directly, or check PAGASA below.';
+  }
+}
+
 initFrontMap();
 renderSavedLocations();
 </script>
