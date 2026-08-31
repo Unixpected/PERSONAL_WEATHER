@@ -211,11 +211,8 @@
     </div>
     <div class="legend-box" id="modelLegend">Models in this forecast: —</div>
 
-    <div class="section-title">⏱️ Next 5 hours — minute by minute</div>
-    <div class="section-sub">Real data is measured every 15 minutes (the finest free public feed available); the minutes in between are interpolated, same idea as your phone's "MinuteCast." Blended against the 6-model hourly consensus for accuracy.</div>
-    <div style="margin-bottom:10px;">
-      <button class="secondary" id="minuteViewToggle" style="font-size:.75rem; padding:6px 12px;" onclick="toggleMinuteView()">Show full per-minute list</button>
-    </div>
+    <div class="section-title">⏱️ Next 5 hours — every 15 minutes</div>
+    <div class="section-sub">Each block is a real measured data point (15 minutes is the finest free public feed available — no interpolated guessing). Tap a block to see exactly how many of the 6 models actually agree it'll rain.</div>
     <div id="minuteList" class="minute-list"></div>
 
     <div class="section-title">📍 5 km Surrounding Points</div>
@@ -307,6 +304,22 @@ function precipAgreementPct(values){
   if(!valid.length) return null;
   const rainingCount = valid.filter(v => v > 0.1).length;
   return Math.round((rainingCount/valid.length)*100);
+}
+
+// Same idea as precipAgreementPct, but also names which specific models forecast rain,
+// so the person can see exactly how split (or unanimous) the models actually are.
+function computeAgreement(precip, hourIdx){
+  if(hourIdx < 0) return {pct:null, count:0, total:0, names:[]};
+  const infos = MODELS.map(m => ({name:m.name, val: precip[m.key][hourIdx]}))
+    .filter(o => o.val !== null && o.val !== undefined && !isNaN(o.val));
+  if(!infos.length) return {pct:null, count:0, total:0, names:[]};
+  const raining = infos.filter(o => o.val > 0.1);
+  return {
+    pct: Math.round((raining.length/infos.length)*100),
+    count: raining.length,
+    total: infos.length,
+    names: raining.map(o=>o.name)
+  };
 }
 function offsetPoints(lat, lon, km=5){
   const dLat = km/111;
@@ -419,7 +432,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
       if(diff < bestDiff){ bestDiff = diff; hourIdx = j; }
     }
     const hourlyMedianTemp = hourIdx >= 0 ? median(MODELS.map(m => temps[m.key][hourIdx])) : fTemps[i];
-    const hourlyMedianRain = hourIdx >= 0 ? precipAgreementPct(MODELS.map(m => precip[m.key][hourIdx])) : 0;
+    const agreement = computeAgreement(precip, hourIdx);
 
     const blendedTemp = fTemps[i] !== null && hourlyMedianTemp !== null
       ? (fTemps[i]*0.6 + hourlyMedianTemp*0.4)
@@ -428,7 +441,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
     points.push({
       time: fTimes[i],
       temp: blendedTemp,
-      rain: hourlyMedianRain ?? 0,
+      agreement,
       precipMm: fPrecip[i] ?? 0
     });
   }
@@ -442,113 +455,58 @@ function precipLabel(mmPerHour){
   return {text:'Heavy Rain', icon:'⛈️'};
 }
 
-// Linearly interpolates the real 15-min points down to per-minute values for display.
-// This is presentation smoothing, not new measured data — the list says so up top.
-function buildMinuteSeries(finePoints){
-  const minutes = [];
-  for(let i=0; i<finePoints.length-1; i++){
-    const a = finePoints[i], b = finePoints[i+1];
-    const tA = new Date(a.time), tB = new Date(b.time);
-    const stepMs = 60*1000;
-    for(let t=tA.getTime(); t<tB.getTime(); t+=stepMs){
-      const frac = (t - tA.getTime()) / (tB.getTime() - tA.getTime());
-      const temp = a.temp + (b.temp - a.temp)*frac;
-      const precipMmPer15 = a.precipMm + (b.precipMm - a.precipMm)*frac;
-      const mmPerHour = precipMmPer15 * 4; // 15-min amount -> hourly rate for classification
-      minutes.push({ time: new Date(t), temp, mmPerHour });
-    }
-  }
-  return minutes;
-}
-
-// Merges consecutive minutes that share the same condition/temperature into a single
-// row so unchanging stretches (e.g. an hour of steady light rain) show as one line
-// instead of dozens of identical rows.
-function mergeMinutesIntoSegments(minutes){
-  const segments = [];
-  let cur = null;
-  minutes.forEach(m => {
-    const p = precipLabel(m.mmPerHour);
-    const roundedTemp = Math.round(m.temp*2)/2; // nearest 0.5° to avoid noisy flicker
-    if(cur && cur.label === p.text && Math.abs(cur.temp - roundedTemp) < 0.6){
-      cur.end = m.time;
-    } else {
-      if(cur) segments.push(cur);
-      cur = {start: m.time, end: m.time, label: p.text, icon: p.icon, temp: roundedTemp};
-    }
-  });
-  if(cur) segments.push(cur);
-  return segments;
+function confidenceLine(agreement){
+  if(agreement.total === 0) return 'Model agreement data unavailable for this window.';
+  const {pct, count, total, names} = agreement;
+  if(count === 0) return `${total} of ${total} models forecast no measurable rain here.`;
+  const who = names.length ? ` (${names.join(', ')})` : '';
+  if(pct >= 70) return `${count} of ${total} models agree${who} — fairly confident.`;
+  if(pct >= 30) return `Only ${count} of ${total} models show rain${who} — split, low-to-moderate confidence.`;
+  return `Just ${count} of ${total} models show any rain${who} — likely won't actually happen.`;
 }
 
 let lastFinePoints = [];
-let minuteViewMode = 'merged'; // 'merged' | 'full'
 
 function renderMinuteList(finePoints){
   lastFinePoints = finePoints;
   const container = document.getElementById('minuteList');
   if(!finePoints.length){ container.innerHTML = '<div class="minute-row">No high-resolution data available for this location.</div>'; return; }
 
-  const minutes = buildMinuteSeries(finePoints);
-  if(!minutes.length){ container.innerHTML = '<div class="minute-row">Not enough data to build a minute-by-minute view.</div>'; return; }
+  container.innerHTML = finePoints.map((p, idx) => {
+    const mmPerHour = p.precipMm * 4;
+    const label = precipLabel(mmPerHour);
+    const ag = p.agreement || {pct:null, count:0, total:0, names:[]};
 
-  const rows = minuteViewMode === 'full'
-    ? minutes.map(m => {
-        const p = precipLabel(m.mmPerHour);
-        return {start: m.time, end: m.time, label: p.text, icon: p.icon, temp: m.temp};
-      })
-    : mergeMinutesIntoSegments(minutes);
+    // If the single blended model says rain but most of the 6 models disagree,
+    // say so plainly instead of stating "Light Rain" as if it were settled.
+    let displayText = label.text;
+    if(label.text !== 'No Precipitation' && ag.pct !== null && ag.pct < 30){
+      displayText = `Possible ${label.text} (unlikely)`;
+    }
 
-  const segRow = s => {
-    const sameMinute = s.start.getTime() === s.end.getTime();
-    const timeLabel = sameMinute ? fmtHour(s.start) : `${fmtHour(s.start)} – ${fmtHour(s.end)}`;
-    return `<div class="minute-row">
-      <div class="m-time">${timeLabel}</div>
-      <div class="m-icon">${s.icon}</div>
-      <div class="m-desc">${s.label}</div>
-      <div class="m-temp">${s.temp.toFixed(1)}°</div>
-    </div>`;
-  };
+    const startTime = new Date(p.time);
+    const endTime = new Date(startTime.getTime() + 15*60*1000);
+    const timeLabel = `${fmtHour(startTime)} – ${fmtHour(endTime)}`;
+    const confPct = ag.pct !== null ? `${ag.pct}%` : '—';
+    const blockId = `mb${idx}`;
 
-  // Split into "right now" (first ~45 min) and "later" — both collapsible so nothing
-  // is forced to stay open if the person wants a shorter view.
-  const cutoff = new Date(Date.now() + 45*60*1000);
-  const soon = rows.filter(s => s.start <= cutoff);
-  const later = rows.filter(s => s.start > cutoff);
-
-  let html = `
-    <div class="minute-chunk">
-      <div class="chunk-header open" id="soon-header" onclick="toggleChunk('soon')">
-        <span>Right now (next ~45 min)</span>
-        <span class="chev">▾</span>
-      </div>
-      <div class="chunk-body open" id="soon-body">
-        ${soon.map(segRow).join('')}
-      </div>
-    </div>`;
-
-  if(later.length){
-    html += `
+    return `
       <div class="minute-chunk">
-        <div class="chunk-header" id="later-header" onclick="toggleChunk('later')">
-          <span>Later (up to 5 hours)</span>
-          <span class="m-desc">${later.length} ${minuteViewMode === 'full' ? 'minutes' : 'period'+(later.length>1?'s':'')}</span>
+        <div class="chunk-header ${idx===0?'open':''}" id="${blockId}-header" onclick="toggleChunk('${blockId}')">
+          <span class="m-time" style="width:auto;">${timeLabel}</span>
+          <span class="m-icon">${label.icon}</span>
+          <span class="m-desc">${displayText} · ${confPct} model agreement</span>
+          <span class="m-temp">${p.temp.toFixed(1)}°</span>
           <span class="chev">▾</span>
         </div>
-        <div class="chunk-body" id="later-body">
-          ${later.map(segRow).join('')}
+        <div class="chunk-body ${idx===0?'open':''}" id="${blockId}-body">
+          <div class="minute-row" style="display:block;">
+            ${confidenceLine(ag)}<br>
+            <span style="color:var(--muted); font-size:.78rem;">Blended forecast rain: ${p.precipMm.toFixed(2)} mm this window (~${mmPerHour.toFixed(2)} mm/hr rate).</span>
+          </div>
         </div>
       </div>`;
-  }
-
-  container.innerHTML = html;
-}
-
-function toggleMinuteView(){
-  minuteViewMode = minuteViewMode === 'merged' ? 'full' : 'merged';
-  document.getElementById('minuteViewToggle').textContent =
-    minuteViewMode === 'full' ? 'Show simplified view' : 'Show full per-minute list';
-  renderMinuteList(lastFinePoints);
+  }).join('');
 }
 
 function toggleChunk(id){
