@@ -114,6 +114,28 @@
   .chunk-header.open .chev{transform:rotate(180deg);}
   .chunk-body{display:none;}
   .chunk-body.open{display:block;}
+
+  .suggestions{
+    position:absolute; top:100%; left:0; right:0; background:var(--card2);
+    border:1px solid var(--border); border-radius:8px; margin-top:4px;
+    max-height:220px; overflow-y:auto; z-index:1000;
+  }
+  .suggestion-item{padding:9px 12px; font-size:.82rem; cursor:pointer; border-bottom:1px solid var(--border);}
+  .suggestion-item:last-child{border-bottom:none;}
+  .suggestion-item:hover{background:var(--card);}
+
+  .saved-list{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px;}
+  .saved-chip{
+    display:flex; align-items:center; gap:6px; background:var(--card2);
+    border:1px solid var(--border); border-radius:999px; padding:6px 6px 6px 12px; font-size:.8rem;
+  }
+  .saved-chip .chip-label{cursor:pointer;}
+  .saved-chip .chip-label:hover{color:var(--accent);}
+  .chip-del{
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    padding:2px 6px; font-size:.85rem; border-radius:50%; line-height:1;
+  }
+  .chip-del:hover{color:var(--bad); background:rgba(255,93,93,.12);}
 </style>
 </head>
 <body>
@@ -130,7 +152,11 @@
   <div id="manualBox" style="display:none; margin-bottom:14px;">
     <div class="card" style="max-width:460px;">
       <div class="label" style="margin-bottom:8px;">Search a place</div>
-      <input id="manualCity" type="text" placeholder="e.g. Taft Avenue, Manila or Libertad, Pasay">
+      <div style="position:relative;">
+        <input id="manualCity" type="text" placeholder="e.g. Taft Avenue, Manila or Libertad, Pasay"
+          oninput="onCityInput()" onblur="hideSuggestionsDelayed()">
+        <div id="citySuggestions" class="suggestions" style="display:none;"></div>
+      </div>
       <div class="section-sub" style="margin:6px 0 0;">Tip: add the city/province for small barangays — or just click the map, which is always exact.</div>
       <div style="height:8px;"></div>
       <button onclick="searchCity()">Use this location</button>
@@ -143,8 +169,9 @@
   <div id="map"></div>
   <div id="pickedPanel" class="legend-box" style="display:none; margin-top:10px;">
     <div id="pickedName">—</div>
-    <div style="margin-top:8px;">
+    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
       <button onclick="confirmPickedLocation()">Get weather for this spot</button>
+      <button class="secondary" onclick="savePickedLocation()">⭐ Save this location</button>
     </div>
   </div>
 
@@ -158,6 +185,10 @@
     <button class="secondary" onclick="useManualCoords()">Use these coordinates</button>
     <div id="coordsErr" class="err" style="font-size:.8rem; margin-top:8px;"></div>
   </div>
+
+  <div class="section-title">⭐ Saved Locations</div>
+  <div class="section-sub">Saved on this device only (your browser's local storage) — not shared or uploaded anywhere.</div>
+  <div id="savedLocations" class="saved-list"></div>
 
   <div id="app" style="display:none;">
     <div class="row">
@@ -174,6 +205,7 @@
             Wind: <span id="heroWind">-- km/h</span>
           </div>
           <button class="secondary" style="margin-top:10px; font-size:.72rem; padding:6px 10px;" onclick="reopenLocationPicker()">📍 Change location</button>
+          <button class="secondary" style="margin-top:6px; font-size:.72rem; padding:6px 10px;" onclick="saveCurrentLocation()">⭐ Save this</button>
         </div>
       </div>
     </div>
@@ -264,6 +296,18 @@ function stddev(arr){
   const m = mean(a);
   return Math.sqrt(a.reduce((s,v)=>s+(v-m)**2,0)/a.length);
 }
+
+// Precipitation "probability" from Open-Meteo isn't meaningfully defined per named
+// deterministic model (it's really an ensemble statistic), so instead of trusting that
+// field we compute our own honest metric: what % of the 6 models forecast measurable
+// rain (>0.1mm) at this hour. This is derived from real forecast amounts, not a
+// borrowed number that doesn't apply to single-model runs.
+function precipAgreementPct(values){
+  const valid = values.filter(v => v !== null && v !== undefined && !isNaN(v));
+  if(!valid.length) return null;
+  const rainingCount = valid.filter(v => v > 0.1).length;
+  return Math.round((rainingCount/valid.length)*100);
+}
 function offsetPoints(lat, lon, km=5){
   const dLat = km/111;
   const dLon = km/(111*Math.cos(lat*Math.PI/180));
@@ -277,13 +321,16 @@ function offsetPoints(lat, lon, km=5){
 
 async function fetchMultiModel(lat, lon){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=temperature_2m,precipitation_probability,wind_speed_10m` +
+    `&hourly=temperature_2m,precipitation,wind_speed_10m` +
     `&models=${MODEL_QUERY}&timezone=auto&forecast_days=2`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('Weather API error ' + res.status);
   return res.json();
 }
 async function fetchSimple(lat, lon){
+  // Uses Open-Meteo's default blended "best_match" model (no models= param), where
+  // precipitation_probability is a genuinely valid ensemble-derived statistic —
+  // unlike when it's requested per named deterministic model (see fetchMultiModel).
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&hourly=temperature_2m,precipitation_probability&timezone=auto&forecast_days=1`;
   const res = await fetch(url);
@@ -351,7 +398,7 @@ async function fetchFineResolution(lat, lon){
 function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
   const times = hourlyMultiModel.time;
   const temps = modelSeries(hourlyMultiModel, 'temperature_2m');
-  const rains = modelSeries(hourlyMultiModel, 'precipitation_probability');
+  const precip = modelSeries(hourlyMultiModel, 'precipitation');
 
   const fTimes = fineData.minutely_15.time;
   const fTemps = fineData.minutely_15.temperature_2m;
@@ -372,7 +419,7 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
       if(diff < bestDiff){ bestDiff = diff; hourIdx = j; }
     }
     const hourlyMedianTemp = hourIdx >= 0 ? median(MODELS.map(m => temps[m.key][hourIdx])) : fTemps[i];
-    const hourlyMedianRain = hourIdx >= 0 ? median(MODELS.map(m => rains[m.key][hourIdx])) : 0;
+    const hourlyMedianRain = hourIdx >= 0 ? precipAgreementPct(MODELS.map(m => precip[m.key][hourIdx])) : 0;
 
     const blendedTemp = fTemps[i] !== null && hourlyMedianTemp !== null
       ? (fTemps[i]*0.6 + hourlyMedianTemp*0.4)
@@ -577,6 +624,107 @@ function useManualCoords(){
   statusEl.textContent = `Using (${lat}, ${lon}). Fetching forecasts…`;
   if(map) map.setView([lat, lon], 13);
   runForLocation(lat, lon, `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+}
+
+let suggestDebounce = null;
+let lastSuggestions = [];
+
+function onCityInput(){
+  clearTimeout(suggestDebounce);
+  const val = document.getElementById('manualCity').value.trim();
+  const box = document.getElementById('citySuggestions');
+  if(val.length < 3){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  suggestDebounce = setTimeout(async () => {
+    try{
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&limit=6&addressdetails=1`;
+      const res = await fetch(url, {headers:{'Accept':'application/json'}});
+      const j = await res.json();
+      if(!j.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+      lastSuggestions = j;
+      box.innerHTML = j.map((r,i) => {
+        const short = r.display_name.split(',').map(s=>s.trim()).slice(0,3).join(', ');
+        return `<div class="suggestion-item" onmousedown="selectSuggestionByIndex(${i})">${short}</div>`;
+      }).join('');
+      box.style.display = 'block';
+    }catch(e){ box.style.display = 'none'; }
+  }, 400);
+}
+
+function hideSuggestionsDelayed(){
+  // slight delay so a click on a suggestion registers before the dropdown disappears
+  setTimeout(() => { document.getElementById('citySuggestions').style.display = 'none'; }, 150);
+}
+
+function selectSuggestionByIndex(i){
+  const r = lastSuggestions[i];
+  if(!r) return;
+  const label = r.display_name.split(',').map(s=>s.trim()).slice(0,3).join(', ');
+  const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+  document.getElementById('manualCity').value = label;
+  document.getElementById('citySuggestions').style.display = 'none';
+  document.getElementById('citySuggestions').innerHTML = '';
+  document.getElementById('manualBox').style.display = 'none';
+  statusEl.style.display = 'block';
+  statusEl.textContent = `Using ${label}. Fetching forecasts…`;
+  if(map) map.setView([lat, lon], 13);
+  runForLocation(lat, lon, label);
+}
+
+// --- Saved locations (browser localStorage — this device only) ---
+function getSavedLocations(){
+  try{ return JSON.parse(localStorage.getItem('savedLocations') || '[]'); }
+  catch(e){ return []; }
+}
+function setSavedLocations(arr){
+  try{ localStorage.setItem('savedLocations', JSON.stringify(arr)); }
+  catch(e){ console.warn('Could not save location:', e.message); }
+}
+function isDuplicateSaved(arr, lat, lon){
+  return arr.some(s => Math.abs(s.lat - lat) < 0.001 && Math.abs(s.lon - lon) < 0.001);
+}
+function saveLocationToStorage(lat, lon, label){
+  const arr = getSavedLocations();
+  if(isDuplicateSaved(arr, lat, lon)){ renderSavedLocations(); return; }
+  arr.push({lat, lon, label});
+  setSavedLocations(arr);
+  renderSavedLocations();
+}
+function savePickedLocation(){
+  if(!pickedLoc) return;
+  saveLocationToStorage(pickedLoc.lat, pickedLoc.lon, pickedLoc.label);
+}
+function saveCurrentLocation(){
+  if(!CURRENT) return;
+  saveLocationToStorage(CURRENT.lat, CURRENT.lon, CURRENT.label);
+}
+function deleteSavedLocation(idx){
+  const arr = getSavedLocations();
+  arr.splice(idx, 1);
+  setSavedLocations(arr);
+  renderSavedLocations();
+}
+function loadSavedLocation(idx){
+  const arr = getSavedLocations();
+  const loc = arr[idx];
+  if(!loc) return;
+  statusEl.style.display = 'block';
+  statusEl.textContent = `Using ${loc.label}. Fetching forecasts…`;
+  if(map) map.setView([loc.lat, loc.lon], 13);
+  runForLocation(loc.lat, loc.lon, loc.label);
+}
+function renderSavedLocations(){
+  const el = document.getElementById('savedLocations');
+  const arr = getSavedLocations();
+  if(!arr.length){
+    el.innerHTML = '<div class="section-sub" style="margin:0;">No saved locations yet — click "Save this location" after picking a spot.</div>';
+    return;
+  }
+  el.innerHTML = arr.map((s,i) => `
+    <div class="saved-chip">
+      <span class="chip-label" onclick="loadSavedLocation(${i})">📍 ${s.label}</span>
+      <button class="chip-del" onclick="deleteSavedLocation(${i})" title="Remove">✕</button>
+    </div>
+  `).join('');
 }
 
 async function searchCity(){
@@ -789,15 +937,15 @@ async function runForLocation(lat, lon, label){
     const startIdx = currentHourIndex(hourly.time);
 
     const temps = modelSeries(hourly, 'temperature_2m');
-    const rains = modelSeries(hourly, 'precipitation_probability');
+    const precip = modelSeries(hourly, 'precipitation');
     const winds = modelSeries(hourly, 'wind_speed_10m');
 
     const curTemps = MODELS.map(m => temps[m.key][startIdx]);
-    const curRains = MODELS.map(m => rains[m.key][startIdx]);
+    const curPrecip = MODELS.map(m => precip[m.key][startIdx]);
     const curWinds = MODELS.map(m => winds[m.key][startIdx]);
 
     const consensusTemp = median(curTemps);
-    const consensusRain = median(curRains);
+    const consensusRain = precipAgreementPct(curPrecip);
     const consensusWind = median(curWinds);
     const spread = stddev(curTemps);
 
@@ -806,7 +954,7 @@ async function runForLocation(lat, lon, label){
     document.getElementById('heroWind').textContent = `${consensusWind?.toFixed(1) ?? '--'} km/h`;
     document.getElementById('heroPlace').textContent = `${label} (${lat.toFixed(3)}, ${lon.toFixed(3)}) · updated ${new Date().toLocaleTimeString()}`;
     document.getElementById('modelLegend').innerHTML =
-      `Models in this forecast: <b>${MODELS.map(m=>m.name).join(', ')}</b> — consensus is the median across all of them.`;
+      `Models in this forecast: <b>${MODELS.map(m=>m.name).join(', ')}</b> — temperature/wind consensus is the median across all of them. Rain chance = % of these models forecasting measurable rain (not a borrowed probability field, since that's not reliably defined per individual model).`;
 
     const confBadge = document.getElementById('confBadge');
     if(spread < 1.5){ confBadge.className = 'badge high'; confBadge.textContent = 'High Confidence'; }
@@ -841,7 +989,7 @@ async function runForLocation(lat, lon, label){
       tension:.3, pointRadius:0, borderWidth:1.4
     }));
     const consensusData = chartLabels.map((_,i) => median(MODELS.map(m => temps[m.key][startIdx+i])));
-    const rainConsensusData = chartLabels.map((_,i) => median(MODELS.map(m => rains[m.key][startIdx+i])));
+    const rainConsensusData = chartLabels.map((_,i) => precipAgreementPct(MODELS.map(m => precip[m.key][startIdx+i])));
     chartDatasets.push({label:'Consensus', data:consensusData, borderColor:'#ffffff', borderWidth:3, tension:.3, pointRadius:0});
 
     // Quick-glance card row — same 24h data as the chart below, easier to scan at a glance.
@@ -882,6 +1030,7 @@ async function runForLocation(lat, lon, label){
 
 // Load the map right away so it's ready with no lag by the time the user wants to click.
 initFrontMap();
+renderSavedLocations();
 </script>
 </body>
 </html>
