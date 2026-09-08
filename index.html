@@ -327,6 +327,7 @@
     </div>
     <div class="tab-row">
       <button class="tab-btn tab-active" id="tabForecastBtn" onclick="switchTab('forecast')">🌦️ Forecast</button>
+      <button class="tab-btn" id="tabToolsBtn" onclick="switchTab('tools')">🧰 Tools</button>
       <button class="tab-btn" id="tabTyphoonBtn" onclick="switchTab('typhoon')">🌀 Typhoon Tracker</button>
     </div>
   </div>
@@ -366,16 +367,7 @@
     </div>
   </div>
 
-  <div class="legend-box" style="margin-top:10px;">
-    <div style="margin-bottom:8px;">Simplest option: if the map won't load, type coordinates directly (get them from Google Maps by long-pressing your spot).</div>
-    <div class="two-col">
-      <input id="manualLat" type="text" placeholder="Latitude, e.g. 14.5378">
-      <input id="manualLon" type="text" placeholder="Longitude, e.g. 120.9986">
-    </div>
-    <div style="height:8px;"></div>
-    <button class="secondary" onclick="useManualCoords()" aria-label="Use manually entered coordinates">Use these coordinates</button>
-    <div id="coordsErr" class="err" style="font-size:.8rem; margin-top:8px;"></div>
-  </div>
+  <div class="section-sub" style="margin-top:8px;">Map won't load, or want to type an exact spot instead? See <b>🧰 Tools</b> for manual coordinate entry.</div>
 
   <div class="section-title">⭐ Saved Locations</div>
   <div class="section-sub">Saved on this device only (your browser's local storage) — not shared or uploaded anywhere.</div>
@@ -432,20 +424,46 @@
     <div class="legend-box" id="modelLegend">Models in this forecast: —</div>
 
     <div class="section-title">⏱️ Next 5 Hours</div>
-    <div class="section-sub">Tap an hour to jump to its detailed 15-minute breakdown below.</div>
+    <div class="section-sub">Tap an hour to jump to its per-minute breakdown below.</div>
     <div class="nowcast" id="hourCardsRow"></div>
-    <button class="details-toggle" id="detailsToggleBtn" onclick="toggleDetailsPanel()" aria-expanded="false">Show detailed 15-minute breakdown ▾</button>
+    <button class="details-toggle" id="detailsToggleBtn" onclick="toggleDetailsPanel()" aria-expanded="false">Show per-minute breakdown ▾</button>
     <div class="details-panel" id="detailsPanel">
-      <div class="section-sub" style="margin-top:0;">Each block is a real measured data point (15 minutes is the finest free public feed available — no interpolated guessing). Tap a block to see exactly how many of the 6 models actually agree it'll rain. Note: these are weather-model forecasts, not live satellite imagery — for the very next few minutes, what you see outside your window is always the most accurate source.</div>
+      <div class="section-sub" style="margin-top:0;">Grouped into real 15-minute measured blocks (the finest free public feed available) — tap a block to expand it into per-minute rows, smoothly interpolated between that real data point and the next. Note: these are weather-model forecasts, not live satellite imagery — for the very next few minutes, what you see outside your window is always the most accurate source.</div>
       <div id="minuteList" class="minute-list"></div>
     </div>
 
     <div class="section-title">📍 5 km Surrounding Points</div>
-    <div class="section-sub">Quick single-model check ~5km North, South, East and West of you, to spot local variation.</div>
+    <div class="section-sub">Quick single-model check ~5km North, South, East and West of you, to spot local variation. See <b>🧰 Tools</b> for the trip checker and technical model chart.</div>
     <div class="grid4" id="gridPoints"></div>
 
+    <div class="section-title">🕐 Next 24 Hours — at a glance</div>
+    <div class="section-sub">Consensus icon, temperature, and rain chance per hour. The detailed model-by-model chart is in <b>🧰 Tools</b>.</div>
+    <div class="nowcast" id="next24Row" style="margin-bottom:24px;"></div>
+  </div>
+
+  <div style="margin-top:22px;">
+    <button class="secondary" onclick="location.reload()">Refresh</button>
+  </div>
+  </div><!-- /forecastTab -->
+
+  <div id="toolsTab" style="display:none;">
+    <div class="section-title" style="margin-top:0;">🧰 Tools &amp; Advanced Data</div>
+    <div class="section-sub">Secondary features moved here to keep the main forecast focused. Everything below still uses your currently loaded location where relevant.</div>
+
+    <div class="section-title">📌 Manual Coordinates</div>
+    <div class="section-sub">If the map won't load, type coordinates directly (get them from Google Maps by long-pressing your spot).</div>
+    <div class="card" style="max-width:460px;">
+      <div class="two-col">
+        <input id="manualLat" type="text" placeholder="Latitude, e.g. 14.5378">
+        <input id="manualLon" type="text" placeholder="Longitude, e.g. 120.9986">
+      </div>
+      <div style="height:8px;"></div>
+      <button class="secondary" onclick="useManualCoords()" aria-label="Use manually entered coordinates">Use these coordinates</button>
+      <div id="coordsErr" class="err" style="font-size:.8rem; margin-top:8px;"></div>
+    </div>
+
     <div class="section-title">🎒 Umbrella / Trip Checker</div>
-    <div class="section-sub">Compare weather between two points. The map above is now in <b>destination-picking mode</b> — click it to set "To" — or type a place below.</div>
+    <div class="section-sub">Compare weather between two points. Go to the <b>🌦️ Forecast</b> tab's map — it's in <b>destination-picking mode</b> once a location is loaded — to click a "To" spot, or just type a place below.</div>
     <div class="card">
       <div class="two-col">
         <div class="field">
@@ -454,7 +472,7 @@
         </div>
         <div class="field">
           <label>To</label>
-          <input id="tripTo" type="text" placeholder="Type a city, or click the map above">
+          <input id="tripTo" type="text" placeholder="Type a city, or click the map on the Forecast tab">
         </div>
       </div>
       <div class="field">
@@ -471,19 +489,11 @@
       <div id="tripResult" class="trip-result"></div>
     </div>
 
-    <div class="section-title">🕐 Next 24 Hours — at a glance</div>
-    <div class="section-sub">Consensus icon, temperature, and rain chance per hour. The detailed model-by-model chart is further below.</div>
-    <div class="nowcast" id="next24Row" style="margin-bottom:24px;"></div>
-
     <div class="section-title">📈 24h Model Comparison (detailed)</div>
+    <div class="section-sub">Every model plotted individually, plus the white consensus line.</div>
     <canvas id="chart" height="100"></canvas>
     <div class="legend-row" id="chartLegend"></div>
-  </div>
-
-  <div style="margin-top:22px;">
-    <button class="secondary" onclick="location.reload()">Refresh</button>
-  </div>
-  </div><!-- /forecastTab -->
+  </div><!-- /toolsTab -->
 
   <div id="typhoonTab" style="display:none;">
     <div class="section-title">🌀 Typhoon / Wind Speed Tracker</div>
@@ -799,16 +809,20 @@ function conditionLabel(mmPerHour, cloudPct, agreementPct, isDay){
   else if(mmPerHour > 0.05) rainName = 'Light Rain';
 
   if(rainName){
-    const icon = rainName === 'Heavy Rain' ? '⛈️' : rainName === 'Moderate Rain' ? '🌧️' : '🌦️';
-    if(agreementPct === null || agreementPct >= 70) return {text:rainName, icon};
-    if(agreementPct >= 35) return {text:`Chance of ${rainName}`, icon:'🌦️'};
-    return {text:`Slight Chance of ${rainName}`, icon:'🌤️'};
+    // ⛈️/🌧️ are neutral (no sun drawn in them), safe for day or night.
+    // 🌦️/🌤️ literally have a sun in the glyph, so only use those during the day.
+    if(rainName === 'Heavy Rain') return {text:rainName, icon:'⛈️'};
+    if(rainName === 'Moderate Rain') return {text:rainName, icon:'🌧️'};
+    const lightIcon = isDay ? '🌦️' : '🌧️';
+    if(agreementPct === null || agreementPct >= 70) return {text:rainName, icon:lightIcon};
+    if(agreementPct >= 35) return {text:`Chance of ${rainName}`, icon:lightIcon};
+    return {text:`Slight Chance of ${rainName}`, icon: isDay ? '🌤️' : '☁️'};
   }
 
   // No rain from the primary signal, but if a real chunk of models still disagree
   // and show rain, say so rather than calling it flatly clear.
   if(agreementPct !== null && agreementPct >= 25){
-    return {text:'Chance of Rain', icon:'🌦️'};
+    return {text:'Chance of Rain', icon: isDay ? '🌦️' : '🌧️'};
   }
 
   if(cloudPct === null || cloudPct === undefined){
@@ -816,7 +830,7 @@ function conditionLabel(mmPerHour, cloudPct, agreementPct, isDay){
   }
   if(cloudPct < 20) return isDay ? {text:'Sunny', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
   if(cloudPct < 50) return isDay ? {text:'Partly Cloudy', icon:'🌤️'} : {text:'Partly Cloudy Night', icon:'☁️'};
-  if(cloudPct < 80) return {text:'Mostly Cloudy', icon:'⛅'};
+  if(cloudPct < 80) return isDay ? {text:'Mostly Cloudy', icon:'⛅'} : {text:'Mostly Cloudy Night', icon:'☁️'};
   return {text:'Overcast', icon:'☁️'};
 }
 
@@ -870,7 +884,7 @@ function toggleDetailsPanel(forceOpen){
   const shouldOpen = forceOpen !== undefined ? forceOpen : !panel.classList.contains('open');
   panel.classList.toggle('open', shouldOpen);
   btn.setAttribute('aria-expanded', String(shouldOpen));
-  btn.textContent = shouldOpen ? 'Hide detailed 15-minute breakdown ▴' : 'Show detailed 15-minute breakdown ▾';
+  btn.textContent = shouldOpen ? 'Hide per-minute breakdown ▴' : 'Show per-minute breakdown ▾';
 }
 
 function jumpToHourBlock(idx){
@@ -902,6 +916,17 @@ function renderMinuteList(finePoints){
     const confPct = ag.pct !== null ? `${ag.pct}% chance` : '—';
     const blockId = `mb${idx}`;
 
+    const minuteRows = buildMinutesForPoint(finePoints, idx).map(row => {
+      const rowLabel = conditionLabel(row.mmPerHour, p.cloud, ag.pct, isDaytime(row.time));
+      return `
+        <div class="minute-row">
+          <div class="m-time">${fmtHour(row.time)}</div>
+          <div class="m-icon">${rowLabel.icon}</div>
+          <div class="m-desc">${rowLabel.text}</div>
+          <div class="m-temp">${row.temp.toFixed(1)}°</div>
+        </div>`;
+    }).join('');
+
     return `
       <div class="minute-chunk">
         <div class="chunk-header ${idx===0?'open':''}" id="${blockId}-header" onclick="toggleChunk('${blockId}')">
@@ -912,13 +937,32 @@ function renderMinuteList(finePoints){
           <span class="chev">▾</span>
         </div>
         <div class="chunk-body ${idx===0?'open':''}" id="${blockId}-body">
-          <div class="minute-row" style="display:block;">
-            ${confidenceLine(ag)}<br>
-            <span style="color:var(--muted); font-size:.78rem;">Cloud cover: ${p.cloud !== null && p.cloud !== undefined ? Math.round(p.cloud)+'%' : '—'} · Blended forecast rain: ${p.precipMm.toFixed(2)} mm this window (~${mmPerHour.toFixed(2)} mm/hr rate).</span>
+          <div class="legend-box" style="margin:8px 12px 0; border-radius:8px;">
+            ${confidenceLine(ag)} Cloud cover: ${p.cloud !== null && p.cloud !== undefined ? Math.round(p.cloud)+'%' : '—'} · ${p.precipMm.toFixed(2)} mm this 15-min window.
           </div>
+          ${minuteRows}
         </div>
       </div>`;
   }).join('');
+}
+
+// Interpolates the real 15-min point down to 15 per-minute rows, blending toward the
+// next real data point so temperature trends smoothly rather than jumping. Precipitation
+// is spread evenly across the window purely for display — it's the same real total,
+// just broken into minutes rather than being a new measurement.
+function buildMinutesForPoint(finePoints, idx){
+  const p = finePoints[idx];
+  const next = finePoints[idx+1];
+  const startTime = new Date(p.time);
+  const mmPerMinute = p.precipMm / 15;
+  const rows = [];
+  for(let m=0; m<15; m++){
+    const t = new Date(startTime.getTime() + m*60000);
+    const frac = m/15;
+    const temp = next ? (p.temp + (next.temp - p.temp)*frac) : p.temp;
+    rows.push({time:t, temp, mmPerHour: mmPerMinute*60});
+  }
+  return rows;
 }
 
 function toggleChunk(id){
@@ -939,12 +983,12 @@ function fmtHour(iso){
 function simpleCondition(rainProb, cloudPct, isDay){
   if(rainProb !== null && rainProb !== undefined){
     if(rainProb >= 60) return {text:'Rain Likely', icon:'🌧️'};
-    if(rainProb >= 30) return {text:'Chance of Rain', icon:'🌦️'};
+    if(rainProb >= 30) return {text:'Chance of Rain', icon: isDay ? '🌦️' : '🌧️'};
   }
   if(cloudPct === null || cloudPct === undefined) return isDay ? {text:'Clear', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
   if(cloudPct < 20) return isDay ? {text:'Sunny', icon:'☀️'} : {text:'Clear Night', icon:'🌙'};
   if(cloudPct < 50) return isDay ? {text:'Partly Cloudy', icon:'🌤️'} : {text:'Partly Cloudy Night', icon:'☁️'};
-  if(cloudPct < 80) return {text:'Mostly Cloudy', icon:'⛅'};
+  if(cloudPct < 80) return isDay ? {text:'Mostly Cloudy', icon:'⛅'} : {text:'Mostly Cloudy Night', icon:'☁️'};
   return {text:'Overcast', icon:'☁️'};
 }
 
@@ -1533,8 +1577,10 @@ let typhoonInitialized = false;
 
 function switchTab(tab){
   document.getElementById('forecastTab').style.display = tab === 'forecast' ? 'block' : 'none';
+  document.getElementById('toolsTab').style.display = tab === 'tools' ? 'block' : 'none';
   document.getElementById('typhoonTab').style.display = tab === 'typhoon' ? 'block' : 'none';
   document.getElementById('tabForecastBtn').classList.toggle('tab-active', tab === 'forecast');
+  document.getElementById('tabToolsBtn').classList.toggle('tab-active', tab === 'tools');
   document.getElementById('tabTyphoonBtn').classList.toggle('tab-active', tab === 'typhoon');
   if(tab === 'typhoon' && !typhoonInitialized){
     typhoonInitialized = true;
