@@ -466,13 +466,17 @@
     <div class="section-sub">Compare weather between two points. Go to the <b>🌦️ Forecast</b> tab's map — it's in <b>destination-picking mode</b> once a location is loaded — to click a "To" spot, or just type a place below.</div>
     <div class="card">
       <div class="two-col">
-        <div class="field">
+        <div class="field" style="position:relative;">
           <label>From</label>
-          <input id="tripFrom" type="text" placeholder="Defaults to your current location">
+          <input id="tripFrom" type="text" placeholder="Defaults to your current location"
+            oninput="onTripInput('from')" onblur="hideTripSuggestionsDelayed('from')">
+          <div id="tripFromSuggestions" class="suggestions" style="display:none;"></div>
         </div>
-        <div class="field">
+        <div class="field" style="position:relative;">
           <label>To</label>
-          <input id="tripTo" type="text" placeholder="Type a city, or click the map on the Forecast tab">
+          <input id="tripTo" type="text" placeholder="Type a city, or click the map on the Forecast tab"
+            oninput="onTripInput('to')" onblur="hideTripSuggestionsDelayed('to')">
+          <div id="tripToSuggestions" class="suggestions" style="display:none;"></div>
         </div>
       </div>
       <div class="field">
@@ -543,7 +547,7 @@
     </div>
 
     <div class="section-title" style="margin-top:20px;">🌐 Active Tropical Cyclones (best effort)</div>
-    <div class="section-sub">Pulled from GDACS's public global disaster feed when reachable. For official Philippine signal levels (Yellow/Orange/Red per area), always check PAGASA directly — that's a government-specific system we can't reproduce from a free API.</div>
+    <div class="section-sub">Name, tracked date range, and a link to the full track &amp; landfall forecast when GDACS provides one — pulled from their public global disaster feed. For the storm's live path and cone on the map itself, click its icon directly on the Windy map above. For official Philippine signal levels (Yellow/Orange/Red per area), always check PAGASA directly — that's a government-specific system we can't reproduce from a free API.</div>
     <div id="typhoonList" class="legend-box">Loading…</div>
     <div style="margin-top:10px;">
       <a href="https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin" target="_blank" rel="noopener" style="color:var(--accent); font-size:.85rem;">Open PAGASA's official Severe Weather Bulletin →</a>
@@ -1287,17 +1291,71 @@ function attachWeatherMarkers(lat, lon){
   mapMode = 'destination';
 }
 
+let tripSuggestDebounce = {};
+let tripLastSuggestions = {};
+
+function onTripInput(which){
+  const inputId = which === 'from' ? 'tripFrom' : 'tripTo';
+  const boxId = which === 'from' ? 'tripFromSuggestions' : 'tripToSuggestions';
+  const input = document.getElementById(inputId);
+  // typing invalidates any previously selected exact coordinates from a prior suggestion/map click
+  delete input.dataset.lat;
+  delete input.dataset.lon;
+  clearTimeout(tripSuggestDebounce[which]);
+  const val = input.value.trim();
+  const box = document.getElementById(boxId);
+  if(val.length < 3){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  tripSuggestDebounce[which] = setTimeout(async () => {
+    try{
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(val)}&limit=6&addressdetails=1`;
+      const res = await fetch(url, {headers:{'Accept':'application/json'}});
+      const j = await res.json();
+      if(!j.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+      tripLastSuggestions[which] = j;
+      box.innerHTML = j.map((r,i) => {
+        const short = r.display_name.split(',').map(s=>s.trim()).slice(0,3).join(', ');
+        return `<div class="suggestion-item" onmousedown="selectTripSuggestion('${which}',${i})">${short}</div>`;
+      }).join('');
+      box.style.display = 'block';
+    }catch(e){ box.style.display = 'none'; }
+  }, 400);
+}
+
+function hideTripSuggestionsDelayed(which){
+  const boxId = which === 'from' ? 'tripFromSuggestions' : 'tripToSuggestions';
+  setTimeout(() => { const b = document.getElementById(boxId); if(b) b.style.display = 'none'; }, 150);
+}
+
+function selectTripSuggestion(which, i){
+  const r = (tripLastSuggestions[which] || [])[i];
+  if(!r) return;
+  const inputId = which === 'from' ? 'tripFrom' : 'tripTo';
+  const boxId = which === 'from' ? 'tripFromSuggestions' : 'tripToSuggestions';
+  const label = r.display_name.split(',').map(s=>s.trim()).slice(0,3).join(', ');
+  const input = document.getElementById(inputId);
+  input.value = label;
+  input.dataset.lat = r.lat;
+  input.dataset.lon = r.lon;
+  document.getElementById(boxId).style.display = 'none';
+  document.getElementById(boxId).innerHTML = '';
+}
+
 async function checkTrip(){
   const resultEl = document.getElementById('tripResult');
   resultEl.innerHTML = 'Checking…';
   try{
-    const fromVal = document.getElementById('tripFrom').value.trim();
+    const fromInput = document.getElementById('tripFrom');
+    const fromVal = fromInput.value.trim();
     const toInput = document.getElementById('tripTo');
     const toVal = toInput.value.trim();
     if(!toVal){ resultEl.innerHTML = '<span class="err">Please enter a destination or click the map.</span>'; return; }
 
     let fromLoc = CURRENT;
-    if(fromVal){ fromLoc = await geocodeCity(fromVal); }
+    if(fromInput.dataset.lat && fromInput.dataset.lon){
+      fromLoc = {lat: parseFloat(fromInput.dataset.lat), lon: parseFloat(fromInput.dataset.lon), label: fromVal};
+    } else if(fromVal){
+      fromLoc = await geocodeCity(fromVal);
+    }
 
     let toLoc;
     if(toInput.dataset.lat && toInput.dataset.lon){
@@ -1647,7 +1705,12 @@ async function loadActiveTyphoons(){
     const res = await fetch(url);
     if(!res.ok) throw new Error('feed unavailable');
     const j = await res.json();
-    const feats = j.features || [];
+    const allFeats = j.features || [];
+    // The API's own eventtypes= query param isn't reliably restrictive on its own
+    // (it was letting other disaster types like floods through) — filter client-side
+    // to be certain only actual tropical cyclones show up here.
+    const feats = allFeats.filter(f => (f.properties?.eventtype || '').toUpperCase() === 'TC');
+
     if(!feats.length){
       el.innerHTML = 'No active tropical cyclone alerts from GDACS right now.';
       statusCard.className = 'status-card';
@@ -1665,18 +1728,38 @@ async function loadActiveTyphoons(){
     const isSevere = worstLevel.toLowerCase() !== 'green';
     statusCard.className = isSevere ? 'status-card alert' : 'status-card';
     statusCard.innerHTML = `<div class="status-dot" style="background:${isSevere?'var(--bad)':'var(--good)'};"></div>
-      <div><div style="font-weight:800;">${isSevere?'🔴 ACTIVE SYSTEM':'🟢'} ${worst.properties?.name || worst.properties?.eventname || 'Tropical system tracked'}</div>
-      <div style="color:var(--muted); font-size:.8rem;">${worstLevel} alert level · ${feats.length} system${feats.length>1?'s':''} tracked globally by GDACS</div></div>`;
+      <div><div style="font-weight:800;">${isSevere?'🔴 ACTIVE SYSTEM':'🟢'} ${worst.properties?.name || worst.properties?.eventname || 'Tropical cyclone tracked'}</div>
+      <div style="color:var(--muted); font-size:.8rem;">${worstLevel} alert level · ${feats.length} tropical cyclone${feats.length>1?'s':''} tracked globally by GDACS</div></div>`;
 
+    // Best-effort date range and track/report link — GDACS's field names vary by
+    // event, so everything here is read defensively and simply omitted if absent
+    // rather than guessed or fabricated.
     el.innerHTML = feats.slice(0, 6).map(f => {
       const p = f.properties || {};
       const level = (p.alertlevel || 'Green');
       const dotColor = level.toLowerCase() === 'red' ? 'var(--bad)' : level.toLowerCase() === 'orange' ? 'var(--warn)' : 'var(--good)';
       const name = p.name || p.eventname || 'Unnamed system';
-      return `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border);">
-        <span class="dot" style="background:${dotColor};"></span>
-        <span style="font-weight:600;">🌀 ${name}</span>
-        <span style="color:var(--muted); margin-left:auto; font-size:.78rem;">${level} alert</span>
+
+      const fromDate = p.fromdate ? new Date(p.fromdate) : null;
+      const toDate = p.todate ? new Date(p.todate) : null;
+      const dateFmt = (d) => d ? d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) : null;
+      let dateRangeText = '';
+      if(fromDate && toDate) dateRangeText = `Tracked ${dateFmt(fromDate)} – ${dateFmt(toDate)}`;
+      else if(fromDate) dateRangeText = `Tracked since ${dateFmt(fromDate)}`;
+
+      const country = p.country || p.iso3 || '';
+      const reportUrl = p.url?.report || p.url?.details || p.url?.geometry || null;
+
+      return `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="dot" style="background:${dotColor};"></span>
+          <span style="font-weight:600;">🌀 ${name}</span>
+          <span style="color:var(--muted); margin-left:auto; font-size:.78rem;">${level} alert</span>
+        </div>
+        <div style="color:var(--muted); font-size:.75rem; margin-top:3px; margin-left:17px;">
+          ${dateRangeText}${country ? (dateRangeText ? ' · ' : '') + 'Affecting: ' + country : ''}
+          ${reportUrl ? `<br><a href="${reportUrl}" target="_blank" rel="noopener" style="color:var(--accent);">View full track &amp; forecast on GDACS →</a>` : ''}
+        </div>
       </div>`;
     }).join('');
   }catch(e){
