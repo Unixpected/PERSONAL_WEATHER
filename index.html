@@ -207,16 +207,16 @@
 
   /* ===== Light theme ===== */
   [data-theme="light"]{
-    --bg:#f4f7fc; --card:#ffffff; --card2:#eef2f9; --text:#101828; --muted:#5b6b8c;
+    --bg:#e7e9ee; --card:#f4f5f8; --card2:#e9ebf0; --text:#20242c; --muted:#5f6572;
     --accent:#2f7fe0; --accent-dim:#1e5aa8; --good:#1f9d55; --bad:#e0453f; --warn:#b8790a;
-    --border:#dbe3f0;
+    --border:#d3d6de;
   }
   [data-theme="light"] body{
     background:
-      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(47,127,224,.08), transparent 60%),
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(47,127,224,.05), transparent 60%),
       var(--bg);
   }
-  [data-theme="light"] .top-bar{background:rgba(244,247,252,.92);}
+  [data-theme="light"] .top-bar{background:rgba(231,233,238,.92);}
   [data-theme="light"] canvas{background:var(--card2);}
   /* Only primary accent-colored buttons need white text in light mode — scoping this
      narrowly fixes a bug where it was silently making tab buttons, delete buttons, and
