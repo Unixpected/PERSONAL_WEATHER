@@ -331,6 +331,82 @@
     h1{font-size:1rem;}
     .hour-card{min-width:64px; padding:8px 6px;}
   }
+
+  /* ===== Pixel-style glass hero & widgets ===== */
+  body.wx-clear-day{background:radial-gradient(ellipse 1000px 600px at 20% -5%, rgba(255,183,77,.16), transparent 60%), radial-gradient(ellipse 800px 500px at 100% 10%, rgba(77,163,255,.10), transparent 55%), var(--bg);}
+  body.wx-clear-night{background:radial-gradient(ellipse 1000px 600px at 20% -5%, rgba(120,110,255,.14), transparent 60%), radial-gradient(ellipse 700px 400px at 100% 0%, rgba(46,50,204,.10), transparent 55%), var(--bg);}
+  body.wx-cloudy{background:radial-gradient(ellipse 1000px 600px at 20% -5%, rgba(140,155,180,.14), transparent 60%), var(--bg);}
+  body.wx-rain{background:radial-gradient(ellipse 1000px 600px at 20% -5%, rgba(60,90,140,.18), transparent 60%), radial-gradient(ellipse 700px 400px at 90% 100%, rgba(45,111,184,.14), transparent 55%), var(--bg);}
+
+  .glass-hero{
+    position:relative; overflow:hidden; border-radius:22px; padding:28px 24px 24px;
+    background:linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.02));
+    border:1px solid rgba(255,255,255,.14);
+    -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px);
+    box-shadow:0 12px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  [data-theme="light"] .glass-hero{
+    background:linear-gradient(160deg, rgba(255,255,255,.7), rgba(255,255,255,.35));
+    border:1px solid rgba(16,24,40,.08);
+    box-shadow:0 12px 40px rgba(16,24,40,.10), inset 0 1px 0 rgba(255,255,255,.5);
+  }
+  .glass-hero-top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+  .glass-place{font-size:1rem; font-weight:700; font-family:var(--font-display);}
+  .glass-temp-row{display:flex; align-items:flex-start; gap:14px; margin-top:6px;}
+  .glass-temp{font-family:var(--font-display); font-size:5rem; font-weight:800; line-height:.9; letter-spacing:-.03em;}
+  .glass-temp-side{padding-top:10px;}
+  .glass-condition{font-size:1.05rem; font-weight:600; color:var(--text); opacity:.92;}
+  .glass-range{font-size:.85rem; color:var(--muted); margin-top:2px;}
+  .aqi-chip{
+    display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px;
+    background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); font-size:.78rem; font-weight:700;
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  }
+  [data-theme="light"] .aqi-chip{background:rgba(16,24,40,.06); border:1px solid rgba(16,24,40,.1);}
+
+  .widget-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:var(--space-3); margin-top:var(--space-4);}
+  @media (min-width:640px){ .widget-grid{grid-template-columns:repeat(3,1fr);} }
+  .widget-tile{
+    border-radius:18px; padding:16px; position:relative; overflow:hidden;
+    background:linear-gradient(160deg, rgba(255,255,255,.08), rgba(255,255,255,.015));
+    border:1px solid rgba(255,255,255,.10);
+    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+    box-shadow:0 6px 20px rgba(0,0,0,.2);
+  }
+  [data-theme="light"] .widget-tile{
+    background:linear-gradient(160deg, rgba(255,255,255,.75), rgba(255,255,255,.4));
+    border:1px solid rgba(16,24,40,.07);
+    box-shadow:0 6px 20px rgba(16,24,40,.08);
+  }
+  .widget-label{font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:700; margin-bottom:6px;}
+  .widget-value{font-family:var(--font-display); font-size:1.15rem; font-weight:800;}
+  .widget-gauge{display:flex; align-items:center; justify-content:center; margin-top:6px;}
+  .widget-sub{font-size:.72rem; color:var(--muted); margin-top:4px;}
+
+  /* 24-hour strip with connecting line */
+  .strip-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:6px;}
+  .strip-inner{position:relative; display:inline-flex; gap:0; min-width:100%;}
+  .strip-col{width:58px; flex-shrink:0; text-align:center; padding-top:34px; position:relative;}
+  .strip-col .sc-time{font-size:.68rem; color:var(--muted); font-weight:600;}
+  .strip-col .sc-val{font-size:.72rem; color:var(--accent); font-weight:700; margin-top:2px;}
+  .strip-col .sc-icon{font-size:1.15rem; margin-top:4px;}
+  .strip-col .sc-temp{font-size:.72rem; color:var(--muted); margin-top:2px;}
+  .strip-col.sc-sunset{color:var(--warn);}
+  .strip-svg{position:absolute; top:0; left:0; pointer-events:none;}
+
+  /* 5-day forecast */
+  .day-row{display:flex; align-items:center; gap:12px; padding:10px 4px; border-bottom:1px solid rgba(255,255,255,.08);}
+  [data-theme="light"] .day-row{border-bottom:1px solid rgba(16,24,40,.06);}
+  .day-row:last-child{border-bottom:none;}
+  .day-name{width:64px; font-weight:700; font-size:.85rem; flex-shrink:0;}
+  .day-icon{font-size:1.2rem; width:28px; text-align:center; flex-shrink:0;}
+  .day-rain{width:40px; font-size:.7rem; color:var(--accent); flex-shrink:0;}
+  .day-bar-wrap{flex:1; display:flex; align-items:center; gap:8px;}
+  .day-lo{font-size:.8rem; color:var(--muted); width:28px; text-align:right; flex-shrink:0;}
+  .day-hi{font-size:.8rem; font-weight:700; width:28px; flex-shrink:0;}
+  .day-bar-track{flex:1; height:6px; border-radius:999px; background:rgba(255,255,255,.08); position:relative; overflow:hidden;}
+  [data-theme="light"] .day-bar-track{background:rgba(16,24,40,.08);}
+  .day-bar-fill{position:absolute; top:0; bottom:0; border-radius:999px; background:linear-gradient(90deg, #4da3ff, #ff9f6b);}
 </style>
 </head>
 <body>
@@ -396,34 +472,67 @@
   <div id="savedLocations" class="saved-list"></div>
 
   <div id="app" style="display:none;">
-    <div class="app-grid">
-    <div>
-    <div class="row">
-      <div class="card hero">
+    <div class="glass-hero">
+      <div class="glass-hero-top">
         <div>
-          <div class="label">Consensus Now</div>
-          <div class="temp" id="heroTemp">--°</div>
-          <div id="heroCondition" style="font-size:1.05rem; font-weight:700; margin:2px 0 4px;">—</div>
-          <div class="label" id="heroPlace">—</div>
-          <div id="heroSun" style="font-size:.78rem; color:var(--muted); margin-top:6px;">—</div>
-          <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-size:.82rem; color:var(--muted);">
-            <span>🌡️ Feels like <b id="heroFeels" style="color:var(--text);">--°</b></span>
-            <span>💧 Humidity <b id="heroHumidity" style="color:var(--text);">--%</b></span>
-            <span>☁️ Cloud <b id="heroCloud" style="color:var(--text);">--%</b></span>
+          <div class="glass-place" id="heroPlace">—</div>
+          <div class="glass-temp-row">
+            <div class="glass-temp" id="heroTemp">--°</div>
+            <div class="glass-temp-side">
+              <div class="glass-condition" id="heroCondition">—</div>
+              <div class="glass-range">Feels like <b id="heroFeels">--°</b></div>
+            </div>
           </div>
         </div>
-        <div class="hero-actions">
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
           <div id="confBadge" class="badge mid">…</div>
-          <div style="font-size:.85rem; color:var(--muted); text-align:right;">
-            Rain: <span id="heroRain">--%</span><br>
-            Wind: <span id="heroWind">-- km/h</span>
-          </div>
-          <button class="secondary" style="font-size:.72rem; padding:6px 10px;" onclick="reopenLocationPicker()" aria-label="Change location">📍 Change location</button>
-          <button class="secondary" style="font-size:.72rem; padding:6px 10px;" onclick="saveCurrentLocation()" aria-label="Save this location">⭐ Save this</button>
+          <div class="aqi-chip" id="aqiChip">🍃 AQI —</div>
+          <button class="secondary" style="font-size:.72rem; padding:6px 10px;" onclick="reopenLocationPicker()" aria-label="Change location">📍 Change</button>
+          <button class="secondary" style="font-size:.72rem; padding:6px 10px;" onclick="saveCurrentLocation()" aria-label="Save this location">⭐ Save</button>
         </div>
+      </div>
+      <div id="heroSun" style="font-size:.8rem; color:var(--muted); margin-top:14px;">—</div>
+
+      <div class="widget-grid">
+        <div class="widget-tile">
+          <div class="widget-label">UV Index</div>
+          <div class="widget-value" id="uvValue">--</div>
+          <div class="widget-gauge" id="uvGauge"></div>
+        </div>
+        <div class="widget-tile">
+          <div class="widget-label">Humidity</div>
+          <div class="widget-value" id="heroHumidity">--%</div>
+          <div class="widget-gauge" id="humidityGauge"></div>
+        </div>
+        <div class="widget-tile">
+          <div class="widget-label">Real Feel</div>
+          <div class="widget-value" id="realFeelValue">--°</div>
+          <div class="widget-gauge" id="realFeelGauge"></div>
+        </div>
+        <div class="widget-tile">
+          <div class="widget-label">Wind</div>
+          <div class="widget-value" id="heroWind">-- km/h</div>
+          <div class="widget-gauge" id="windGauge"></div>
+        </div>
+        <div class="widget-tile">
+          <div class="widget-label">Sunset</div>
+          <div class="widget-value" id="sunsetValue">--:--</div>
+          <div class="widget-gauge" id="sunArcGauge"></div>
+        </div>
+        <div class="widget-tile">
+          <div class="widget-label">Pressure</div>
+          <div class="widget-value" id="pressureValue">-- mb</div>
+          <div class="widget-gauge" id="pressureGauge"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px; font-size:.78rem; color:var(--muted);">
+        ☔ Rain <b id="heroRain" style="color:var(--text);">--%</b> &nbsp;·&nbsp; ☁️ Cloud <b id="heroCloud" style="color:var(--text);">--%</b>
       </div>
     </div>
 
+    <div class="app-grid">
+    <div>
     <div class="section-title">🧭 Your Weather Plan</div>
     <div class="section-sub">Plain-language takeaways generated from the actual forecast data below — not guesses.</div>
     <div id="insightList" class="insight-list"></div>
@@ -458,9 +567,15 @@
     <div class="section-sub">Quick single-model check ~5km North, South, East and West of you, to spot local variation. See <b>🧰 Tools</b> for the trip checker and technical model chart.</div>
     <div class="grid4" id="gridPoints"></div>
 
-    <div class="section-title">🕐 Next 24 Hours — at a glance</div>
-    <div class="section-sub">Consensus icon, temperature, and rain chance per hour. The detailed model-by-model chart is in <b>🧰 Tools</b>.</div>
-    <div class="nowcast" id="next24Row" style="margin-bottom:24px;"></div>
+    <div class="section-title">🕐 24-Hour Forecast</div>
+    <div class="section-sub">Temperature trend with sunset marked, plus wind speed per hour. The detailed model-by-model chart is in <b>🧰 Tools</b>.</div>
+    <div class="strip-scroll"><div id="hourStrip" class="strip-inner"></div></div>
+
+    <div class="section-title">📅 5-Day Forecast</div>
+    <div class="section-sub">High/low range and rain chance per day, from Open-Meteo's blended model.</div>
+    <div class="card" id="fiveDayCard">
+      <div id="fiveDayList">Loading…</div>
+    </div>
   </div>
 
   <div style="margin-top:22px;">
@@ -686,12 +801,56 @@ function offsetPoints(lat, lon, km=5){
 
 async function fetchMultiModel(lat, lon){
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&hourly=temperature_2m,precipitation,wind_speed_10m,cloud_cover,apparent_temperature,relative_humidity_2m` +
+    `&hourly=temperature_2m,precipitation,wind_speed_10m,wind_direction_10m,cloud_cover,apparent_temperature,relative_humidity_2m,pressure_msl,uv_index` +
     `&daily=sunrise,sunset` +
     `&models=${MODEL_QUERY}&timezone=auto&forecast_days=2`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('Weather API error ' + res.status);
   return res.json();
+}
+
+// Lightweight 5-day overview from Open-Meteo's default blended model — kept separate
+// from the 6-model multi-fetch above so that call doesn't balloon in size/cost.
+async function fetchFiveDayOverview(lat, lon){
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code` +
+    `&timezone=auto&forecast_days=5`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('5-day forecast unavailable');
+  return res.json();
+}
+
+// Open-Meteo's separate free Air Quality API (no key). Converts PM2.5 to the standard
+// US EPA AQI scale using the official breakpoint table — a real, documented formula,
+// not an invented number.
+async function fetchAirQuality(lat, lon){
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
+    `&hourly=pm2_5&timezone=auto`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('Air quality unavailable');
+  return res.json();
+}
+
+function pm25ToAQI(pm){
+  // EPA breakpoint table (2024 revision uses similar breakpoints for PM2.5 in µg/m³)
+  const bp = [
+    [0.0,9.0,0,50],[9.1,35.4,51,100],[35.5,55.4,101,150],
+    [55.5,125.4,151,200],[125.5,225.4,201,300],[225.5,500.4,301,500]
+  ];
+  for(const [cLo,cHi,aLo,aHi] of bp){
+    if(pm >= cLo && pm <= cHi){
+      return Math.round(((aHi-aLo)/(cHi-cLo)) * (pm-cLo) + aLo);
+    }
+  }
+  return pm > 500 ? 500 : 0;
+}
+function aqiCategory(aqi){
+  if(aqi <= 50) return {label:'Good', color:'var(--good)'};
+  if(aqi <= 100) return {label:'Moderate', color:'var(--warn)'};
+  if(aqi <= 150) return {label:'Unhealthy (Sensitive)', color:'#ff9f4d'};
+  if(aqi <= 200) return {label:'Unhealthy', color:'var(--bad)'};
+  if(aqi <= 300) return {label:'Very Unhealthy', color:'#c05ce0'};
+  return {label:'Hazardous', color:'#8b1a3d'};
 }
 async function fetchSimple(lat, lon){
   // Uses Open-Meteo's default blended "best_match" model (no models= param), where
@@ -817,6 +976,112 @@ function buildFineNowcast(fineData, hourlyMultiModel, startIdx){
 // times, not a guessed 6am-6pm window. Falls back to the guess only if unavailable.
 let SUN_TIMES = [];
 
+// ===== SVG gauge builders for the Pixel-style widget tiles =====
+
+function svgArc(cx, cy, r, startAngle, endAngle){
+  const toXY = (a) => [cx + r*Math.cos(a*Math.PI/180), cy + r*Math.sin(a*Math.PI/180)];
+  const [x1,y1] = toXY(startAngle), [x2,y2] = toXY(endAngle);
+  const largeArc = (endAngle - startAngle) % 360 > 180 ? 1 : 0;
+  return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`;
+}
+
+function uvGaugeSVG(uv){
+  const v = uv === null || uv === undefined ? 0 : Math.max(0, Math.min(11, uv));
+  const frac = v/11;
+  const angle = -210 + frac*240; // -210deg to +30deg sweep (240deg arc)
+  const cx=44, cy=44, r=34;
+  const needleX = cx + r*0.75*Math.cos(angle*Math.PI/180);
+  const needleY = cy + r*0.75*Math.sin(angle*Math.PI/180);
+  return `<svg width="88" height="60" viewBox="0 0 88 60">
+    <path d="${svgArc(cx,cy,r,-210,30)}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="7" stroke-linecap="round"/>
+    <path d="${svgArc(cx,cy,r,-210,30)}" fill="none" stroke="url(#uvGrad)" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${frac*160} 160"/>
+    <circle cx="${needleX}" cy="${needleY}" r="4" fill="#fff"/>
+    <defs><linearGradient id="uvGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2ecc71"/><stop offset="40%" stop-color="#f5d742"/>
+      <stop offset="70%" stop-color="#ff9f4d"/><stop offset="100%" stop-color="#c05ce0"/>
+    </linearGradient></defs>
+  </svg>`;
+}
+
+function humidityGaugeSVG(pct){
+  const v = pct === null || pct === undefined ? 0 : Math.max(0, Math.min(100, pct));
+  const r = 30, circ = 2*Math.PI*r;
+  return `<svg width="72" height="72" viewBox="0 0 72 72">
+    <circle cx="36" cy="36" r="${r}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="7"/>
+    <circle cx="36" cy="36" r="${r}" fill="none" stroke="#4da3ff" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${circ}" stroke-dashoffset="${circ*(1-v/100)}" transform="rotate(-90 36 36)"/>
+    <text x="36" y="41" text-anchor="middle" font-size="14" font-weight="800" fill="currentColor">${Math.round(v)}%</text>
+  </svg>`;
+}
+
+function realFeelGaugeSVG(temp){
+  const v = temp === null || temp === undefined ? 20 : temp;
+  const clamped = Math.max(-10, Math.min(45, v));
+  const frac = (clamped+10)/55;
+  const angle = -210 + frac*240;
+  const cx=44, cy=44, r=34;
+  const needleX = cx + r*0.75*Math.cos(angle*Math.PI/180);
+  const needleY = cy + r*0.75*Math.sin(angle*Math.PI/180);
+  return `<svg width="88" height="60" viewBox="0 0 88 60">
+    <path d="${svgArc(cx,cy,r,-210,30)}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="7" stroke-linecap="round"/>
+    <path d="${svgArc(cx,cy,r,-210,30)}" fill="none" stroke="url(#feelGrad)" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${frac*160} 160"/>
+    <circle cx="${needleX}" cy="${needleY}" r="4" fill="#fff"/>
+    <defs><linearGradient id="feelGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4da3ff"/><stop offset="50%" stop-color="#2ecc71"/><stop offset="100%" stop-color="#ff5d5d"/>
+    </linearGradient></defs>
+  </svg>`;
+}
+
+function windCompassSVG(speed, dirDeg){
+  const angle = (dirDeg === null || dirDeg === undefined) ? 0 : dirDeg;
+  return `<svg width="76" height="76" viewBox="0 0 76 76">
+    <circle cx="38" cy="38" r="32" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="1.5"/>
+    <text x="38" y="12" text-anchor="middle" font-size="8" fill="var(--muted)">N</text>
+    <text x="66" y="41" text-anchor="middle" font-size="8" fill="var(--muted)">E</text>
+    <text x="38" y="71" text-anchor="middle" font-size="8" fill="var(--muted)">S</text>
+    <text x="10" y="41" text-anchor="middle" font-size="8" fill="var(--muted)">W</text>
+    <g transform="rotate(${angle} 38 38)">
+      <path d="M 38 14 L 33 40 L 38 34 L 43 40 Z" fill="#4da3ff"/>
+    </g>
+    <circle cx="38" cy="38" r="3" fill="#fff"/>
+  </svg>`;
+}
+
+function sunArcSVG(sunrise, sunset, now){
+  let frac = 0.5;
+  if(sunrise && sunset){
+    const total = sunset - sunrise;
+    frac = total > 0 ? Math.max(0, Math.min(1, (now - sunrise)/total)) : 0.5;
+  }
+  const cx=44, cy=48, r=34;
+  const angle = -180 + frac*180;
+  const sunX = cx + r*Math.cos(angle*Math.PI/180);
+  const sunY = cy + r*Math.sin(angle*Math.PI/180);
+  const isUp = now >= sunrise && now <= sunset;
+  return `<svg width="88" height="54" viewBox="0 0 88 54">
+    <path d="${svgArc(cx,cy,r,-180,0)}" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="2" stroke-dasharray="2 4"/>
+    ${isUp ? `<circle cx="${sunX}" cy="${sunY}" r="5" fill="#ffb74d"/>` : ''}
+  </svg>`;
+}
+
+function pressureGaugeSVG(hpa){
+  const v = hpa === null || hpa === undefined ? 1013 : hpa;
+  const clamped = Math.max(970, Math.min(1050, v));
+  const frac = (clamped-970)/80;
+  const angle = -210 + frac*240;
+  const cx=44, cy=44, r=34;
+  const needleX = cx + r*0.75*Math.cos(angle*Math.PI/180);
+  const needleY = cy + r*0.75*Math.sin(angle*Math.PI/180);
+  return `<svg width="88" height="60" viewBox="0 0 88 60">
+    <path d="${svgArc(cx,cy,r,-210,30)}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="7" stroke-linecap="round"/>
+    <path d="${svgArc(cx,cy,r,-210,30)}" fill="none" stroke="#4da3ff" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${frac*160} 160"/>
+    <circle cx="${needleX}" cy="${needleY}" r="4" fill="#fff"/>
+  </svg>`;
+}
+
 function isDaytime(date){
   const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
   const entry = SUN_TIMES.find(s => {
@@ -876,6 +1141,71 @@ function confidenceLine(agreement){
 // Groups the 15-min finePoints into hourly quick-view cards. Clicking a card opens the
 // detailed 15-min panel and scrolls/opens the matching blocks — progressive disclosure
 // instead of dumping every 15-min block in the main view.
+// Renders the Pixel-style connected 24h strip: an SVG line tracing temperature across
+// the hours, with wind speed and condition icon per column, and the real sunset time
+// inserted at its correct chronological position (not just appended at the end).
+function renderHourStrip(times, temps, winds, rainPcts, clouds, sunTimes){
+  const container = document.getElementById('hourStrip');
+  if(!container || !times.length){ if(container) container.innerHTML=''; return; }
+
+  const colWidth = 58;
+  const cols = times.map((t, i) => ({
+    time: new Date(t), temp: temps[i], wind: winds[i], rain: rainPcts[i], cloud: clouds[i], isSunset:false
+  }));
+
+  // Insert a sunset marker column at its real chronological slot, if it falls within this window
+  if(sunTimes.length){
+    const sunset = sunTimes[0].sunset;
+    let insertAt = cols.findIndex(c => c.time > sunset);
+    if(insertAt === -1 && sunset > cols[0].time && sunset < new Date(cols[cols.length-1].time.getTime()+3600000)) insertAt = cols.length;
+    if(insertAt > 0){
+      cols.splice(insertAt, 0, {time: sunset, isSunset:true});
+    }
+  }
+
+  const validTemps = cols.filter(c=>!c.isSunset).map(c=>c.temp).filter(t=>t!==null && t!==undefined);
+  const maxT = Math.max(...validTemps), minT = Math.min(...validTemps);
+  const range = (maxT - minT) || 1;
+
+  const lineHeight = 30, lineTop = 4;
+  let pathD = '';
+  let px = 0;
+  const points = [];
+  cols.forEach((c, i) => {
+    const x = i*colWidth + colWidth/2;
+    if(!c.isSunset && c.temp !== null && c.temp !== undefined){
+      const y = lineTop + lineHeight - ((c.temp - minT)/range)*lineHeight;
+      points.push([x,y]);
+    }
+  });
+  pathD = points.map((p,i) => (i===0?'M':'L') + p[0] + ' ' + p[1]).join(' ');
+
+  const svgWidth = cols.length * colWidth;
+  const svg = `<svg class="strip-svg" width="${svgWidth}" height="${lineTop+lineHeight+4}" viewBox="0 0 ${svgWidth} ${lineTop+lineHeight+4}">
+    <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>
+  </svg>`;
+
+  const colsHtml = cols.map(c => {
+    if(c.isSunset){
+      return `<div class="strip-col sc-sunset">
+        <div class="sc-time">Sunset</div>
+        <div class="sc-icon">🌇</div>
+        <div class="sc-val">${fmtHour(c.time)}</div>
+      </div>`;
+    }
+    const cond = conditionLabel((c.rain ?? 0) > 25 ? 0.6 : 0, c.cloud, c.rain, isDaytime(c.time));
+    return `<div class="strip-col">
+      <div class="sc-time">${fmtHour(c.time)}</div>
+      <div class="sc-val">${c.wind !== null && c.wind !== undefined ? c.wind.toFixed(1)+' km/h' : '--'}</div>
+      <div class="sc-icon">${cond.icon}</div>
+      <div class="sc-temp">${c.temp !== null && c.temp !== undefined ? c.temp.toFixed(0)+'°' : '--'}</div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = svg + colsHtml;
+  container.style.position = 'relative';
+}
+
 function renderHourCards(finePoints){
   const container = document.getElementById('hourCardsRow');
   if(!finePoints.length){ container.innerHTML = ''; return; }
@@ -1465,6 +1795,9 @@ async function runForLocation(lat, lon, label){
     const clouds = modelSeries(hourly, 'cloud_cover');
     const feelsLikeSeries = modelSeries(hourly, 'apparent_temperature');
     const humiditySeries = modelSeries(hourly, 'relative_humidity_2m');
+    const windDirSeries = modelSeries(hourly, 'wind_direction_10m');
+    const pressureSeries = modelSeries(hourly, 'pressure_msl');
+    const uvSeries = modelSeries(hourly, 'uv_index');
 
     const curTemps = MODELS.map(m => temps[m.key][startIdx]);
     const curPrecip = MODELS.map(m => precip[m.key][startIdx]);
@@ -1472,6 +1805,9 @@ async function runForLocation(lat, lon, label){
     const curClouds = MODELS.map(m => clouds[m.key][startIdx]);
     const curFeels = MODELS.map(m => feelsLikeSeries[m.key][startIdx]);
     const curHumidity = MODELS.map(m => humiditySeries[m.key][startIdx]);
+    const curWindDir = MODELS.map(m => windDirSeries[m.key][startIdx]);
+    const curPressure = MODELS.map(m => pressureSeries[m.key][startIdx]);
+    const curUV = MODELS.map(m => uvSeries[m.key][startIdx]);
 
     const consensusTemp = median(curTemps);
     const consensusRain = precipAgreementPct(curPrecip);
@@ -1480,21 +1816,82 @@ async function runForLocation(lat, lon, label){
     const consensusPrecipAmt = median(curPrecip);
     const consensusFeels = median(curFeels);
     const consensusHumidity = median(curHumidity);
+    const consensusWindDir = median(curWindDir);
+    const consensusPressure = median(curPressure);
+    const consensusUV = median(curUV);
     const spread = stddev(curTemps);
 
     const nowCondition = conditionLabel(consensusPrecipAmt ?? 0, consensusCloud, consensusRain, isDaytime(new Date(hourly.time[startIdx])));
 
-    document.getElementById('heroTemp').textContent = `${consensusTemp?.toFixed(1) ?? '--'}°C`;
+    document.getElementById('heroTemp').textContent = `${consensusTemp?.toFixed(0) ?? '--'}°`;
     document.getElementById('heroCondition').textContent = `${nowCondition.icon} ${nowCondition.text}`;
     document.getElementById('heroRain').textContent = `${consensusRain?.toFixed(0) ?? '--'}%`;
     document.getElementById('heroWind').textContent = `${consensusWind?.toFixed(1) ?? '--'} km/h`;
     document.getElementById('heroFeels').textContent = `${consensusFeels?.toFixed(0) ?? '--'}°`;
     document.getElementById('heroHumidity').textContent = `${consensusHumidity?.toFixed(0) ?? '--'}%`;
     document.getElementById('heroCloud').textContent = `${consensusCloud?.toFixed(0) ?? '--'}%`;
-    document.getElementById('heroPlace').textContent = `${label} (${lat.toFixed(3)}, ${lon.toFixed(3)}) · updated ${new Date().toLocaleTimeString()}`;
+    document.getElementById('heroPlace').textContent = `${label}`;
+
+    // Widget gauges
+    document.getElementById('uvValue').textContent = consensusUV !== null ? consensusUV.toFixed(1) : '--';
+    document.getElementById('uvGauge').innerHTML = uvGaugeSVG(consensusUV);
+    document.getElementById('humidityGauge').innerHTML = humidityGaugeSVG(consensusHumidity);
+    document.getElementById('realFeelValue').textContent = `${consensusFeels?.toFixed(0) ?? '--'}°`;
+    document.getElementById('realFeelGauge').innerHTML = realFeelGaugeSVG(consensusFeels);
+    document.getElementById('windGauge').innerHTML = windCompassSVG(consensusWind, consensusWindDir);
+    document.getElementById('pressureValue').textContent = consensusPressure !== null ? `${consensusPressure.toFixed(0)} mb` : '-- mb';
+    document.getElementById('pressureGauge').innerHTML = pressureGaugeSVG(consensusPressure);
+
+    // Weather-reactive background
+    document.body.className = nowCondition.text.includes('Rain') || nowCondition.text.includes('Chance')
+      ? 'wx-rain'
+      : (consensusCloud !== null && consensusCloud >= 50 ? 'wx-cloudy' : (isDaytime(new Date(hourly.time[startIdx])) ? 'wx-clear-day' : 'wx-clear-night'));
+
     if(SUN_TIMES.length){
-      document.getElementById('heroSun').innerHTML = `🌅 ${fmtHour(SUN_TIMES[0].sunrise)} &nbsp;·&nbsp; 🌇 ${fmtHour(SUN_TIMES[0].sunset)}`;
+      document.getElementById('heroSun').innerHTML = `🌅 Sunrise ${fmtHour(SUN_TIMES[0].sunrise)} &nbsp;·&nbsp; 🌇 Sunset ${fmtHour(SUN_TIMES[0].sunset)}`;
+      document.getElementById('sunsetValue').textContent = fmtHour(SUN_TIMES[0].sunset);
+      document.getElementById('sunArcGauge').innerHTML = sunArcSVG(SUN_TIMES[0].sunrise, SUN_TIMES[0].sunset, new Date());
     }
+
+    // Air quality (separate free API) — best effort, degrades quietly if unreachable
+    fetchAirQuality(lat, lon).then(aq => {
+      const idx = currentHourIndex(aq.hourly.time);
+      const pm = aq.hourly.pm2_5[idx];
+      if(pm === null || pm === undefined) return;
+      const aqi = pm25ToAQI(pm);
+      const cat = aqiCategory(aqi);
+      document.getElementById('aqiChip').innerHTML = `🍃 AQI ${aqi} · <span style="color:${cat.color};">${cat.label}</span>`;
+    }).catch(()=>{ document.getElementById('aqiChip').textContent = '🍃 AQI unavailable'; });
+
+    // 5-day forecast — separate lightweight fetch
+    fetchFiveDayOverview(lat, lon).then(fd => {
+      const days = fd.daily.time;
+      const rows = days.map((d, i) => {
+        const dt = new Date(d);
+        const dayLabel = i === 0 ? 'Today' : dt.toLocaleDateString(undefined, {weekday:'short'});
+        const hi = fd.daily.temperature_2m_max[i];
+        const lo = fd.daily.temperature_2m_min[i];
+        const rain = fd.daily.precipitation_probability_max[i];
+        const icon = rain >= 50 ? '🌧️' : rain >= 20 ? '🌦️' : '☀️';
+        const allHi = Math.max(...fd.daily.temperature_2m_max);
+        const allLo = Math.min(...fd.daily.temperature_2m_min);
+        const range = allHi - allLo || 1;
+        const leftPct = ((lo - allLo) / range) * 100;
+        const widthPct = ((hi - lo) / range) * 100;
+        return `<div class="day-row">
+          <div class="day-name">${dayLabel}</div>
+          <div class="day-icon">${icon}</div>
+          <div class="day-rain">${rain ?? 0}%</div>
+          <div class="day-bar-wrap">
+            <div class="day-lo">${lo?.toFixed(0) ?? '--'}°</div>
+            <div class="day-bar-track"><div class="day-bar-fill" style="left:${leftPct}%; width:${widthPct}%;"></div></div>
+            <div class="day-hi">${hi?.toFixed(0) ?? '--'}°</div>
+          </div>
+        </div>`;
+      }).join('');
+      document.getElementById('fiveDayList').innerHTML = rows;
+    }).catch(()=>{ document.getElementById('fiveDayList').innerHTML = '<span class="err">5-day forecast unavailable.</span>'; });
+
     document.getElementById('modelLegend').innerHTML =
       `Models in this forecast: <b>${MODELS.map(m=>m.name).join(', ')}</b> — temperature/wind/cloud consensus is the median across all of them. Rain chance = % of these models forecasting measurable rain (not a borrowed probability field, since that's not reliably defined per individual model).`;
 
@@ -1584,18 +1981,9 @@ async function runForLocation(lat, lon, label){
     const precipAmtData = chartLabels.map((_,i) => median(MODELS.map(m => precip[m.key][startIdx+i])));
     chartDatasets.push({label:'Consensus', data:consensusData, borderColor:'#ffffff', borderWidth:3, tension:.3, pointRadius:0});
 
-    // Quick-glance card row — same 24h data as the chart below, easier to scan at a glance.
-    document.getElementById('next24Row').innerHTML = chartLabels.map((lbl, i) => {
-      const hourDate = new Date(hourly.time[startIdx+i]);
-      const cond = conditionLabel(precipAmtData[i] ?? 0, cloudConsensusData[i], rainConsensusData[i], isDaytime(hourDate));
-      return `
-      <div class="mini">
-        <div class="dir">${lbl}</div>
-        <div style="font-size:1.3rem; margin:2px 0;">${cond.icon}</div>
-        <div class="t">${consensusData[i]?.toFixed(0) ?? '--'}°</div>
-        <div class="p" style="font-size:.66rem; line-height:1.2;">${cond.text}</div>
-      </div>`;
-    }).join('');
+    // Connected-line hourly strip (temperature line, wind speed per hour, sunset marked)
+    const windData = chartLabels.map((_,i) => median(MODELS.map(m => winds[m.key][startIdx+i])));
+    renderHourStrip(hourly.time.slice(startIdx, startIdx+24), consensusData, windData, rainConsensusData, cloudConsensusData, SUN_TIMES);
 
     if(window.mainChartInstance) window.mainChartInstance.destroy();
     const isLight = document.documentElement.getAttribute('data-theme') === 'light';
